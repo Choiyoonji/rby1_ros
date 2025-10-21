@@ -1,0 +1,73 @@
+import numpy as np
+from scipy.spatial.transform import Rotation as R
+
+# 1) Euler → Quaternion
+def euler_to_quat(euler, seq='xyz', degrees=True):
+    """
+    euler: array-like, shape (3,)  [roll, pitch, yaw] (seq에 맞춤)
+    return: np.ndarray, shape (4,) quaternion [x, y, z, w]
+    """
+    euler = np.asarray(euler, dtype=float)
+    return R.from_euler(seq, euler, degrees=degrees).as_quat()
+
+# 2) Quaternion → Euler
+def quat_to_euler(quat, seq='xyz', degrees=True):
+    """
+    quat: array-like, shape (4,)  quaternion [x, y, z, w]
+    return: np.ndarray, shape (3,) Euler angles in seq order
+    """
+    quat = np.asarray(quat, dtype=float)
+    return R.from_quat(quat).as_euler(seq, degrees=degrees)
+
+# 3) SE(3) → position, quaternion
+def se3_to_pos(T):
+    """
+    T: np.ndarray, shape (4,4)  homogeneous transform
+    return: np.ndarray, shape (3,) position
+            np.ndarray, shape (4,) quaternion
+    """
+    T = np.asarray(T, dtype=float)
+    assert T.shape == (4, 4), "T must be 4x4"
+    position = T[:3, 3].copy()
+    rotation_quat = R.from_matrix(T[:3, :3]).as_quat()
+    return position, rotation_quat
+
+# 4) position + quaternion → SE(3)
+def pos_to_se3(position, rotation_quat):
+    """
+    position: array-like, shape (3,)
+    rotation_quat: array-like, shape (4,) quaternion [x, y, z, w]
+    return: np.ndarray, shape (4,4) SE(3)
+    """
+    position = np.asarray(position, dtype=float)
+    rotation_quat = np.asarray(rotation_quat, dtype=float)
+    T = np.eye(4, dtype=float)
+    T[:3, :3] = R.from_quat(rotation_quat).as_matrix()
+    T[:3, 3]  = position
+    return T
+
+# 5) mat4 to list
+def mat4_to_list(T: np.ndarray):
+    return T.tolist()
+
+# 6) ndarray to list
+def nd_to_list(x):
+    return x.tolist() if isinstance(x, np.ndarray) else x
+
+def get_ready_pose():
+    torso_T = np.array([[ 1.00000000e+00,  0.00000000e+00, -2.77555756e-16, -2.49596312e-17],
+                                    [ 0.00000000e+00,  1.00000000e+00,  0.00000000e+00,  0.00000000e+00],
+                                    [ 2.77555756e-16,  0.00000000e+00,  1.00000000e+00,  1.08490130e+00],
+                                    [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
+    
+    right_T = np.array([[ 6.42787610e-01,  7.18367158e-17, -7.66044443e-01,  2.68202503e-01],
+                                    [ 1.98266891e-01,  9.65925826e-01,  1.66365675e-01, -2.65253679e-01],
+                                    [ 7.39942112e-01, -2.58819045e-01,  6.20885153e-01,  9.96085719e-01],
+                                    [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
+    
+    left_T = np.array([[ 6.42787610e-01, -7.18367158e-17, -7.66044443e-01,  2.68202503e-01],
+                                    [-1.98266891e-01,  9.65925826e-01, -1.66365675e-01,  2.65253679e-01],
+                                    [ 7.39942112e-01,  2.58819045e-01,  6.20885153e-01,  9.96085720e-01],
+                                    [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
+
+    return torso_T, right_T, left_T
