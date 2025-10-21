@@ -1,3 +1,4 @@
+import os
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
@@ -88,6 +89,7 @@ class RBY1Node(Node):
         self.torso_reset = False
         self.right_reset = False
         self.left_reset = False
+        self.reset_done = False
         
         self.link_idx = {
             "base": 0,
@@ -96,8 +98,8 @@ class RBY1Node(Node):
             "link_left_arm_6": 3,
         }
 
-        self.control_timer = self.create_timer(Settings.dt, self.run)
-        self.publish_timer = self.create_timer(Settings.update_dt, self.publish_state)
+        self.control_timer = self.create_timer(self.settings.dt, self.run)
+        self.publish_timer = self.create_timer(self.settings.update_dt, self.publish_state)
 
 
     def calc_ee_pose(self):
@@ -163,7 +165,7 @@ class RBY1Node(Node):
         self.rby1_pub.publish(msg)
 
     def control_callback(self, msg: Command):
-        self.get_logger().info(f"Received control command: {msg.data}")
+        self.get_logger().info(f"Received control command:")
         SystemContext.control_state.is_controller_connected = True
 
         SystemContext.control_state.ready = msg.ready
@@ -173,14 +175,14 @@ class RBY1Node(Node):
 
         SystemContext.control_state.control_mode = msg.control_mode
 
-        SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_position.position)
-        SystemContext.control_state.desired_right_ee_position["orientation"] = np.array(msg.desired_right_ee_position.orientation)
-        SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_position.position)
-        SystemContext.control_state.desired_left_ee_position["orientation"] = np.array(msg.desired_left_ee_position.orientation)
-        SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_position.position)
-        SystemContext.control_state.desired_head_ee_position["orientation"] = np.array(msg.desired_head_ee_position.orientation)
+        SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_position.position.data)
+        SystemContext.control_state.desired_right_ee_position["orientation"] = np.array(msg.desired_right_ee_position.orientation.data)
+        SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_position.position.data)
+        SystemContext.control_state.desired_left_ee_position["orientation"] = np.array(msg.desired_left_ee_position.orientation.data)
+        SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_position.position.data)
+        SystemContext.control_state.desired_head_ee_position["orientation"] = np.array(msg.desired_head_ee_position.orientation.data)
 
-        SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions)
+        SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
     def is_connected(self):
         return self.robot is not None
@@ -280,8 +282,11 @@ class RBY1Node(Node):
 
     def estop(self):
         logging.critical("Emergency Stop triggered! Shutting down the robot immediately.")
-        self.robot.power_off(".*")
-        exit(1)
+        try:
+            self.robot.power_off(".*")
+        finally:
+            rclpy.shutdown()
+            os._exit(1)  # or sys.exit(1)
 
     def handle_signals(self):
         if SystemContext.control_state.ready:
@@ -342,17 +347,21 @@ class RBY1Node(Node):
                 SystemContext.rby1_state.is_right_following = True
                 SystemContext.rby1_state.is_left_following = True
                 SystemContext.rby1_state.is_torso_following = True
-                self.right_reset = True
-                self.left_reset = True
-                self.torso_reset = True
+                if self.reset_done == False:
+                    self.right_reset = True
+                    self.left_reset = True
+                    self.torso_reset = True
+                    self.reset_done = True
             else:
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
                 SystemContext.rby1_state.is_torso_following = False
+                self.reset_done = False
         else:
             SystemContext.rby1_state.is_right_following = False
             SystemContext.rby1_state.is_left_following = False
             SystemContext.rby1_state.is_torso_following = False
+            self.reset_done = False
 
         if self.stream:
             try:
@@ -377,8 +386,8 @@ class RBY1Node(Node):
                 if SystemContext.control_state.control_mode == "whole_body":
                     ctrl_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.01)
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
                         .set_joint_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
                         .add_joint_limit("right_arm_3", -2.6, -0.5)
@@ -393,16 +402,16 @@ class RBY1Node(Node):
                         .set_reset_reference(self.right_reset | self.left_reset | self.torso_reset)
                     )
                     ctrl_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
-                    ctrl_builder.add_target("base", "link_right_arm_6", right_T @ np.linalg.inv(Settings.T_hand_offset),
+                    ctrl_builder.add_target("base", "link_right_arm_6", right_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 20, np.pi * 80)
-                    ctrl_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(Settings.T_hand_offset),
+                    ctrl_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 20, np.pi * 80)
 
                 else:
                     torso_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.01)
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([400.] * 6)
                         .set_joint_torque_limit([500] * 6)
                         .add_joint_limit("torso_1", -0.523598776, 1.3)
@@ -414,8 +423,8 @@ class RBY1Node(Node):
                     )
                     right_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.01)
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
                         .add_joint_limit("right_arm_3", -2.6, -0.5)
@@ -427,8 +436,8 @@ class RBY1Node(Node):
                     )
                     left_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.01)
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
                         .add_joint_limit("left_arm_3", -2.6, -0.5)
@@ -440,9 +449,9 @@ class RBY1Node(Node):
                     )
                     torso_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
                     right_builder.add_target("base", "link_right_arm_6",
-                                                right_T @ np.linalg.inv(Settings.T_hand_offset),
+                                                right_T @ np.linalg.inv(self.settings.T_hand_offset),
                                                 2, np.pi * 2, 20, np.pi * 80)
-                    left_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(Settings.T_hand_offset),
+                    left_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 20, np.pi * 80)
 
                     ctrl_builder = (
@@ -461,16 +470,16 @@ class RBY1Node(Node):
                         rby.ComponentBasedCommandBuilder()
                         .set_head_command(
                             rby.JointPositionCommandBuilder()
-                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
+                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                             .set_position([0.0, 0.0])
-                            .set_minimum_time(Settings.dt * 1.01)
+                            .set_minimum_time(self.settings.dt * 1.01)
                         )
                         .set_mobility_command(
                             rby.SE2VelocityCommandBuilder()
-                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(Settings.dt * 10))
-                            .set_velocity(-SystemContext.rby1_state.mobile_linear_velocity,
-                                            -SystemContext.rby1_state.mobile_angular_velocity)
-                            .set_minimum_time(Settings.dt * 1.01)
+                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                            .set_velocity(SystemContext.rby1_state.mobile_linear_velocity,
+                                            SystemContext.rby1_state.mobile_angular_velocity)
+                            .set_minimum_time(self.settings.dt * 1.01)
                         )
                         .set_body_command(
                             ctrl_builder
@@ -481,7 +490,7 @@ class RBY1Node(Node):
             except Exception as e:
                 logging.error(e)
                 self.stream = None
-                exit(1)
+                # exit(1)
 
 
 if __name__ == "__main__":
