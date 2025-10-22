@@ -138,9 +138,9 @@ class RBY1Node(Node):
 
         self.calc_ee_pose()
 
-        right_ee_pos, right_ee_quat = se3_to_pos(SystemContext.rby1_state.right_ee_position)
-        left_ee_pos, left_ee_quat = se3_to_pos(SystemContext.rby1_state.left_ee_position)
-        torso_ee_pos, torso_ee_quat = se3_to_pos(SystemContext.rby1_state.torso_ee_position)
+        right_ee_pos, right_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.right_ee_position)
+        left_ee_pos, left_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.left_ee_position)
+        torso_ee_pos, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_position)
 
         msg.right_ee_pose = EEpos()
         msg.right_ee_pose.position = Float32MultiArray(data=right_ee_pos.tolist())
@@ -153,6 +153,14 @@ class RBY1Node(Node):
         msg.torso_ee_pose = EEpos()
         msg.torso_ee_pose.position = Float32MultiArray(data=torso_ee_pos.tolist())
         msg.torso_ee_pose.orientation = Float32MultiArray(data=torso_ee_quat.tolist())
+
+        msg.right_force_sensor = FTsensor()
+        msg.right_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
+        msg.right_force_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.right_torque_sensor.tolist())
+
+        msg.left_force_sensor = FTsensor()
+        msg.left_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.left_force_sensor.tolist())
+        msg.left_force_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.left_torque_sensor.tolist())
 
         msg.center_of_mass = Float32MultiArray(data=SystemContext.rby1_state.center_of_mass.tolist())
 
