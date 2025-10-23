@@ -1,2 +1,2 @@
 float32MultiArray position
-float32MultiArray orientation
+float32MultiArray quaternion

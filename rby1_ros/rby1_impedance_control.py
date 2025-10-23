@@ -144,15 +144,15 @@ class RBY1Node(Node):
 
         msg.right_ee_pose = EEpos()
         msg.right_ee_pose.position = Float32MultiArray(data=right_ee_pos.tolist())
-        msg.right_ee_pose.orientation = Float32MultiArray(data=right_ee_quat.tolist())
+        msg.right_ee_pose.quaternion = Float32MultiArray(data=right_ee_quat.tolist())
 
         msg.left_ee_pose = EEpos()
         msg.left_ee_pose.position = Float32MultiArray(data=left_ee_pos.tolist())
-        msg.left_ee_pose.orientation = Float32MultiArray(data=left_ee_quat.tolist())
+        msg.left_ee_pose.quaternion = Float32MultiArray(data=left_ee_quat.tolist())
 
         msg.torso_ee_pose = EEpos()
         msg.torso_ee_pose.position = Float32MultiArray(data=torso_ee_pos.tolist())
-        msg.torso_ee_pose.orientation = Float32MultiArray(data=torso_ee_quat.tolist())
+        msg.torso_ee_pose.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
 
         msg.right_force_sensor = FTsensor()
         msg.right_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
@@ -184,11 +184,11 @@ class RBY1Node(Node):
         SystemContext.control_state.control_mode = msg.control_mode
 
         SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_position.position.data)
-        SystemContext.control_state.desired_right_ee_position["orientation"] = np.array(msg.desired_right_ee_position.orientation.data)
+        SystemContext.control_state.desired_right_ee_position["quaternion"] = np.array(msg.desired_right_ee_position.quaternion.data)
         SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_position.position.data)
-        SystemContext.control_state.desired_left_ee_position["orientation"] = np.array(msg.desired_left_ee_position.orientation.data)
+        SystemContext.control_state.desired_left_ee_position["quaternion"] = np.array(msg.desired_left_ee_position.quaternion.data)
         SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_position.position.data)
-        SystemContext.control_state.desired_head_ee_position["orientation"] = np.array(msg.desired_head_ee_position.orientation.data)
+        SystemContext.control_state.desired_head_ee_position["quaternion"] = np.array(msg.desired_head_ee_position.quaternion.data)
 
         SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
@@ -340,15 +340,15 @@ class RBY1Node(Node):
         if SystemContext.control_state.is_controller_connected:
             SystemContext.control_state.desired_right_ee_T = pos_to_se3(
                 SystemContext.control_state.desired_right_ee_position["position"],
-                SystemContext.control_state.desired_right_ee_position["orientation"]
+                SystemContext.control_state.desired_right_ee_position["quaternion"]
             )
             SystemContext.control_state.desired_left_ee_T = pos_to_se3(
                 SystemContext.control_state.desired_left_ee_position["position"],
-                SystemContext.control_state.desired_left_ee_position["orientation"]
+                SystemContext.control_state.desired_left_ee_position["quaternion"]
             )
             SystemContext.control_state.desired_head_ee_T = pos_to_se3(
                 SystemContext.control_state.desired_head_ee_position["position"],
-                SystemContext.control_state.desired_head_ee_position["orientation"]
+                SystemContext.control_state.desired_head_ee_position["quaternion"]
             )
 
             if SystemContext.control_state.move:

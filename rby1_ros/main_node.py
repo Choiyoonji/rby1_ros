@@ -41,6 +41,8 @@ class MainNode(Node):
             Float32MultiArray,
             '/control/command',
             10)
+        
+        self.main_timer = self.create_timer(0.05, self.main_loop)
 
     def switch_callback(self, msg):
         self.get_logger().info(f'Received switch data: {msg.data}')

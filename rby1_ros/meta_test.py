@@ -19,7 +19,7 @@ if __name__ == "__main__":
     #                                         max_payload=1024*1024, jpeg_quality=50)
     # sender.open()
     # sender.connect()
-    T, pos, quat, deg = get_ready_pos()
+    T, pos, quat = get_ready_pos()
     while True:
         data = receiver.get()
         parsed = receiver.parse(data)

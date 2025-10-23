@@ -44,8 +44,8 @@ if __name__ == "__main__":
     rby1_dyn = RBY1Dyn()
     joint_positions = np.deg2rad([0.0, 0.0] +
                 [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
-                [0.0, -0.0, 0.0, -100.0, 0.0, 10.0, 90.0] +
-                [0.0, 0.0, 0.0, -100.0, 0.0, 10.0, -90.0])
+                [0.0, -0.0, 0.0, -100.0, 20.0, 20.0, 90.0] +
+                [0.0, 0.0, 0.0, -100.0, 20.0, 20.0, -90.0])
     fk_results = rby1_dyn.get_fk(joint_positions)
     for link_name, transform in fk_results.items():
         print(f"Link: {link_name}")

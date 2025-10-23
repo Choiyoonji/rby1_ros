@@ -10,7 +10,8 @@ setup(
         ('share/ament_index/resource_index/packages',
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + '/msg', ['msg/EEpos.msg', 'msg/FTsensor.msg', 'msg/State.msg'])
+        ('share/' + package_name + '/msg', ['msg/EEpos.msg', 'msg/FTsensor.msg', 'msg/State.msg', 'msg/Command.msg']),
+        ('share/' + package_name + '/srv', ['srv/MetaData.srv', 'srv/MetaInitial.srv']),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -21,6 +22,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'meta_node = rby1_ros.meta_node:main',
+            'rby1_control = rby1_ros.rby1_impedance_control:main',
         ],
     },
 )

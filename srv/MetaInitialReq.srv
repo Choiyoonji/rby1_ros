@@ -1,4 +1,8 @@
 bool initialize
+bool check_pose
+EEpos left_ready_pos
+EEpos right_ready_pos
+EEpos head_ready_pos
 ---
 bool success
 bool check1

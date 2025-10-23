@@ -1,5 +1,6 @@
 bool request
 ---
+str error_msg
 EEpos left_ee_pos
 EEpos right_ee_pos
 EEpos head_ee_pos

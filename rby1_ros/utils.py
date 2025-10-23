@@ -66,6 +66,24 @@ def mat4_to_list(T: np.ndarray):
 def nd_to_list(x):
     return x.tolist() if isinstance(x, np.ndarray) else x
 
+def calc_diff_rot(quat1, quat2):
+    q1 = np.asarray(quat1)
+    q2 = np.asarray(quat2)
+
+    epsilon = 1e-15
+    q1 = q1 / (np.linalg.norm(q1) + epsilon)
+    q2 = q2 / (np.linalg.norm(q2) + epsilon)
+
+    dot_product = np.dot(q1, q2)
+
+    dot_abs = np.abs(dot_product)
+
+    clipped_dot = np.clip(dot_abs, -1.0, 1.0)
+
+    diff_theta_rad = 2.0 * np.arccos(clipped_dot)
+
+    return diff_theta_rad
+
 def get_ready_pos():
     # torso_T = np.array([[ 1.00000000e+00,  0.00000000e+00, -2.77555756e-16, -2.49596312e-17],
     #                                   [ 0.00000000e+00,  1.00000000e+00,  0.00000000e+00,  0.00000000e+00],
@@ -95,10 +113,6 @@ def get_ready_pos():
                                     [ 0.00000000e+00,  1.00000000e+00,  0.00000000e+00,  2.20000000e-01],
                                     [ 1.00000000e+00,  0.00000000e+00, -4.44089210e-16,  9.02899640e-01],
                                     [ 0.00000000e+00,  0.00000000e+00,  0.00000000e+00,  1.00000000e+00]])
-
-    torso_pos, torso_euler = se3_to_pos_euler(torso_T)
-    right_pos, right_euler = se3_to_pos_euler(right_T)
-    left_pos, left_euler = se3_to_pos_euler(left_T)
     
     torso_pos, torso_quat = se3_to_pos_quat(torso_T)
     right_pos, right_quat = se3_to_pos_quat(right_T)
@@ -106,7 +120,6 @@ def get_ready_pos():
 
     T = {"torso": torso_T, "right": right_T, "left": left_T}
     pos = {"torso": torso_pos, "right": right_pos, "left": left_pos}
-    deg = {"torso": torso_euler, "right": right_euler, "left": left_euler}
     quat = {"torso": torso_quat, "right": right_quat, "left": left_quat}
 
-    return T, pos, quat, deg
+    return T, pos, quat
