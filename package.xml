@@ -7,15 +7,11 @@
   <maintainer email="cyj21c6352@gmail.com">choiyj</maintainer>
   <license>TODO: License declaration</license>
 
-  <buildtool_depend>ament_cmake_auto</buildtool_depend>
   <buildtool_depend>ament_python</buildtool_depend>
-  <build_depend>rosidl_default_generators</build_depend>
 
   <depend>std_msgs</depend>
 
-  <exec_depend>rosidl_default_runtime</exec_depend>
-
-  <member_of_group>rosidl_interface_packages</member_of_group>
+  <exec_depend>rby1_interfaces</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>

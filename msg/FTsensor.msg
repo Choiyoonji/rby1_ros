@@ -1,2 +1,0 @@
-float32MultiArray force
-float32MultiArray torque
