@@ -2,7 +2,8 @@ import time
 import numpy as np
 import rclpy
 from rclpy.node import Node
-from rby1_ros.srv import MetaDataReq, MetaInitialReq
+from std_msgs.msg import Float32MultiArray
+from rby1_interfaces.srv import MetaDataReq, MetaInitialReq
 from scipy.spatial.transform import Rotation as R
 from MetaQuest_HandTracking.XRHandReceiver import XRHandReceiver
 from MetaQuest_HandTracking.StereoStream.StereoStreamer import UdpImageSender
@@ -11,8 +12,6 @@ from rby1_ros.meta_status import MetaStatus as MetaState
 
 
 ROT_T = R.from_euler('xyz', [0, -90, 0], degrees=True).as_matrix()
-INIT_POS = [0.0, 0.0, 0.0]
-INIT_ROT = np.eye(3)
 
 class MetaNode(Node):
     def __init__(self):
@@ -30,8 +29,8 @@ class MetaNode(Node):
         self.sender.open()
         self.sender.connect()
 
-        self.initialize_service = self.create_service(MetaInitialReq, 'set_meta_initial_offset', self.set_init_offset)
-        self.status_service = self.create_service(MetaDataReq, 'get_meta_status', self.get_meta_status)
+        self.initialize_service = self.create_service(MetaInitialReq, '/meta/set_offset', self.set_init_offset)
+        self.status_service = self.create_service(MetaDataReq, '/meta/get_data', self.get_meta_status)
 
     def get_data(self):
         parsed = self.receiver.parse(self.receiver.get())
@@ -47,9 +46,17 @@ class MetaNode(Node):
             if _is_zero_pos(parsed["head_robot"]["pos"]) or _is_zero_pos(parsed["left_robot"]["pos"]) or _is_zero_pos(parsed["right_robot"]["pos"]):
                 return None
 
-            data["head"] = {"pos": parsed["head_robot"]["pos"], "rotmat": parsed["head_robot"]["rotmat"]}
-            data["left"] = {"pos": parsed["left_robot"]["pos"], "rotmat": parsed["left_robot"]["rotmat"] @ ROT_T, "hand": parsed['left_raw']}
-            data["right"] = {"pos": parsed["right_robot"]["pos"], "rotmat": parsed["right_robot"]["rotmat"] @ ROT_T, "hand": parsed['right_raw']}
+            def _orthonormalize(Rm):
+                U, _, Vt = np.linalg.svd(Rm)
+                R_ortho = U @ Vt
+                if np.linalg.det(R_ortho) < 0:  # 반사 방지
+                    U[:, -1] *= -1
+                    R_ortho = U @ Vt
+                return R_ortho
+
+            data["head"] = {"pos": parsed["head_robot"]["pos"], "rotmat": _orthonormalize(parsed["head_robot"]["rotmat"])}
+            data["left"] = {"pos": parsed["left_robot"]["pos"], "rotmat": _orthonormalize(parsed["left_robot"]["rotmat"] @ ROT_T), "hand": parsed['left_raw']}
+            data["right"] = {"pos": parsed["right_robot"]["pos"], "rotmat": _orthonormalize(parsed["right_robot"]["rotmat"] @ ROT_T), "hand": parsed['right_raw']}
 
         return data
     
@@ -116,20 +123,6 @@ class MetaNode(Node):
         """
         pos_R = data["right"]["pos"];  pos_L = data["left"]["pos"];  pos_H = data["head"]["pos"]
         deg_R = data["right"]["rotmat"]; deg_L = data["left"]["rotmat"]; deg_H = data["head"]["rotmat"]
-
-        def _orthonormalize(Rm):
-            U, _, Vt = np.linalg.svd(Rm)
-            R_ortho = U @ Vt
-            if np.linalg.det(R_ortho) < 0:  # 반사 방지
-                U[:, -1] *= -1
-                R_ortho = U @ Vt
-            return R_ortho
-
-        # calc_offset 진입 직후:
-        deg_R = _orthonormalize(deg_R)
-        deg_L = _orthonormalize(deg_L)
-        deg_H = _orthonormalize(deg_H)
-
 
         # 회전행렬의 역행렬은 전치(R.T)를 사용 (정규 회전행렬 가정)
         offset = {
@@ -267,24 +260,22 @@ class MetaNode(Node):
                     self.meta_state.left_arm_rotation = np.array(data["left"]["rotmat"]) @ self.meta_state.left_rot_offset
                     self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
 
-                    response.head_ee_pos.position = nd_to_list(self.meta_state.head_position)
-                    response.head_ee_pos.quaternion = nd_to_list(self.meta_state.head_quaternion)
-
-                    response.right_ee_pos.position = nd_to_list(self.meta_state.right_arm_position)
-                    response.right_ee_pos.quaternion = nd_to_list(self.meta_state.right_arm_quaternion)
-
-                    response.left_ee_pos.position = nd_to_list(self.meta_state.left_arm_position)
-                    response.left_ee_pos.quaternion = nd_to_list(self.meta_state.left_arm_quaternion)
+                    response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
+                    response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
+                    response.right_ee_pos.position   = Float32MultiArray(data=self.meta_state.right_arm_position.tolist())
+                    response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
+                    response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())
+                    response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
 
                 else:
                     response.error_msg = "No valid Meta data available."
                     if self.meta_state.head_position.size != 0:
-                        response.head_ee_pos.position = nd_to_list(self.meta_state.head_position)
-                        response.head_ee_pos.quaternion = nd_to_list(self.meta_state.head_quaternion)
-                        response.right_ee_pos.position = nd_to_list(self.meta_state.right_arm_position)
-                        response.right_ee_pos.quaternion = nd_to_list(self.meta_state.right_arm_quaternion)
-                        response.left_ee_pos.position = nd_to_list(self.meta_state.left_arm_position)
-                        response.left_ee_pos.quaternion = nd_to_list(self.meta_state.left_arm_quaternion)
+                        response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
+                        response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
+                        response.right_ee_pos.position   = Float32MultiArray(data=self.meta_state.right_arm_position.tolist())
+                        response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
+                        response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())
+                        response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
                         response.error_msg += " Returning last known positions."
                     else:
                         response.error_msg += " No last known positions available."
@@ -293,3 +284,14 @@ class MetaNode(Node):
                 response.error_msg = "Meta offsets are not initialized."
 
         return response
+    
+
+def main(args=None):
+    rclpy.init(args=args)
+    meta_node = MetaNode()
+    rclpy.spin(meta_node)
+    meta_node.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()

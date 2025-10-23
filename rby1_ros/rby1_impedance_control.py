@@ -2,7 +2,7 @@ import os
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-from rby1_ros.msg import State, Command, EEpos, FTsensor
+from rby1_interfaces.msg import State, Command, EEpos, FTsensor
 
 import numpy as np
 from utils import *
@@ -142,17 +142,17 @@ class RBY1Node(Node):
         left_ee_pos, left_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.left_ee_position)
         torso_ee_pos, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_position)
 
-        msg.right_ee_pose = EEpos()
-        msg.right_ee_pose.position = Float32MultiArray(data=right_ee_pos.tolist())
-        msg.right_ee_pose.quaternion = Float32MultiArray(data=right_ee_quat.tolist())
+        msg.right_ee_pos = EEpos()
+        msg.right_ee_pos.position = Float32MultiArray(data=right_ee_pos.tolist())
+        msg.right_ee_pos.quaternion = Float32MultiArray(data=right_ee_quat.tolist())
 
-        msg.left_ee_pose = EEpos()
-        msg.left_ee_pose.position = Float32MultiArray(data=left_ee_pos.tolist())
-        msg.left_ee_pose.quaternion = Float32MultiArray(data=left_ee_quat.tolist())
+        msg.left_ee_pos = EEpos()
+        msg.left_ee_pos.position = Float32MultiArray(data=left_ee_pos.tolist())
+        msg.left_ee_pos.quaternion = Float32MultiArray(data=left_ee_quat.tolist())
 
-        msg.torso_ee_pose = EEpos()
-        msg.torso_ee_pose.position = Float32MultiArray(data=torso_ee_pos.tolist())
-        msg.torso_ee_pose.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
+        msg.torso_ee_pos = EEpos()
+        msg.torso_ee_pos.position = Float32MultiArray(data=torso_ee_pos.tolist())
+        msg.torso_ee_pos.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
 
         msg.right_force_sensor = FTsensor()
         msg.right_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
@@ -181,16 +181,17 @@ class RBY1Node(Node):
         SystemContext.control_state.stop = msg.stop
         SystemContext.control_state.estop = msg.estop
 
-        SystemContext.control_state.control_mode = msg.control_mode
+        if msg.move and msg.is_active:
+            SystemContext.control_state.control_mode = msg.control_mode
 
-        SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_position.position.data)
-        SystemContext.control_state.desired_right_ee_position["quaternion"] = np.array(msg.desired_right_ee_position.quaternion.data)
-        SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_position.position.data)
-        SystemContext.control_state.desired_left_ee_position["quaternion"] = np.array(msg.desired_left_ee_position.quaternion.data)
-        SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_position.position.data)
-        SystemContext.control_state.desired_head_ee_position["quaternion"] = np.array(msg.desired_head_ee_position.quaternion.data)
+            SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_pos.position.data)
+            SystemContext.control_state.desired_right_ee_position["quaternion"] = np.array(msg.desired_right_ee_pos.quaternion.data)
+            SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_pos.position.data)
+            SystemContext.control_state.desired_left_ee_position["quaternion"] = np.array(msg.desired_left_ee_pos.quaternion.data)
+            SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_pos.position.data)
+            SystemContext.control_state.desired_head_ee_position["quaternion"] = np.array(msg.desired_head_ee_pos.quaternion.data)
 
-        SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
+            SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
     def is_connected(self):
         return self.robot is not None
