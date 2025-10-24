@@ -176,10 +176,16 @@ class RBY1Node(Node):
         self.get_logger().info(f"Received control command:")
         SystemContext.control_state.is_controller_connected = True
 
-        SystemContext.control_state.ready = msg.ready
+        # toggle
         SystemContext.control_state.move = msg.move
-        SystemContext.control_state.stop = msg.stop
-        SystemContext.control_state.estop = msg.estop
+
+        # pulse
+        if msg.ready:
+            SystemContext.control_state.ready = True
+        if msg.stop:
+            SystemContext.control_state.stop = True
+        if msg.estop:
+            SystemContext.control_state.estop = True
 
         if msg.move and msg.is_active:
             SystemContext.control_state.control_mode = msg.control_mode

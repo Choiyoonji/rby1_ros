@@ -177,7 +177,6 @@ class MetaNode(Node):
             response.check1 = False
             response.check2 = False
             response.check3 = False
-            response.error_msg = "initialize flag is False"
             return response
 
         # 요청에서 ready pose 파싱
@@ -186,7 +185,6 @@ class MetaNode(Node):
         except Exception as e:
             response.success = False
             response.check1 = False; response.check2 = False; response.check3 = False
-            response.error_msg = f"invalid ready pose in request: {e}"
             return response
 
         attempt, max_attempts = 0, 10

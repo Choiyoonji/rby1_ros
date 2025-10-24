@@ -107,33 +107,34 @@ class MainNode(Node):
         self.main_state.current_left_arm_quaternion = np.array(msg.left_ee_pos.quaternion.data)
 
     def publish_command(self):
-        command_msg = Command()
+        if self.main_state.is_robot_connected:
+            command_msg = Command()
 
-        command_msg.is_active = self.main_state.is_meta_ready
-        command_msg.control_mode = "component"
+            command_msg.is_active = self.main_state.is_meta_ready
+            command_msg.control_mode = "component"
 
-        command_msg.desired_head_ee_pos = EEpos()
-        command_msg.desired_head_ee_pos.position = Float32MultiArray(data=self.main_state.desired_head_position.tolist())
-        command_msg.desired_head_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_head_quaternion.tolist())
+            command_msg.desired_head_ee_pos = EEpos()
+            command_msg.desired_head_ee_pos.position = Float32MultiArray(data=self.main_state.desired_head_position.tolist())
+            command_msg.desired_head_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_head_quaternion.tolist())
 
-        command_msg.desired_right_ee_pos = EEpos()
-        command_msg.desired_right_ee_pos.position = Float32MultiArray(data=self.main_state.desired_right_arm_position.tolist())
-        command_msg.desired_right_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_right_arm_quaternion.tolist())
+            command_msg.desired_right_ee_pos = EEpos()
+            command_msg.desired_right_ee_pos.position = Float32MultiArray(data=self.main_state.desired_right_arm_position.tolist())
+            command_msg.desired_right_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_right_arm_quaternion.tolist())
 
-        command_msg.desired_left_ee_pos = EEpos()
-        command_msg.desired_left_ee_pos.position = Float32MultiArray(data=self.main_state.desired_left_arm_position.tolist())
-        command_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
+            command_msg.desired_left_ee_pos = EEpos()
+            command_msg.desired_left_ee_pos.position = Float32MultiArray(data=self.main_state.desired_left_arm_position.tolist())
+            command_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
 
-        command_msg.estop = False
+            command_msg.estop = False
 
-        command_msg.ready = self.ready
-        command_msg.move = self.move
-        command_msg.stop = self.stop
+            command_msg.ready = self.ready
+            command_msg.move = self.move
+            command_msg.stop = self.stop
 
-        self.stop = False
-        self.ready = False
+            self.stop = False
+            self.ready = False
 
-        self.command_pub.publish(command_msg)
+            self.command_pub.publish(command_msg)
 
     def meta_loop(self):
         if not self.move:
