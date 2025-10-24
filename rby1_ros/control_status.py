@@ -6,6 +6,7 @@ class ControlStatus:
     timestamp: float = 0.0
 
     is_controller_connected: bool = False
+    is_active: bool = False
 
     ready: bool = False
     move: bool = False

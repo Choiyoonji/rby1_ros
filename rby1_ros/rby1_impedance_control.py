@@ -154,13 +154,13 @@ class RBY1Node(Node):
         msg.torso_ee_pos.position = Float32MultiArray(data=torso_ee_pos.tolist())
         msg.torso_ee_pos.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
 
-        msg.right_force_sensor = FTsensor()
-        msg.right_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
-        msg.right_force_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.right_torque_sensor.tolist())
+        msg.right_ft_sensor = FTsensor()
+        msg.right_ft_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
+        msg.right_ft_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.right_torque_sensor.tolist())
 
-        msg.left_force_sensor = FTsensor()
-        msg.left_force_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.left_force_sensor.tolist())
-        msg.left_force_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.left_torque_sensor.tolist())
+        msg.left_ft_sensor = FTsensor()
+        msg.left_ft_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.left_force_sensor.tolist())
+        msg.left_ft_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.left_torque_sensor.tolist())
 
         msg.center_of_mass = Float32MultiArray(data=SystemContext.rby1_state.center_of_mass.tolist())
 
@@ -173,8 +173,10 @@ class RBY1Node(Node):
         self.rby1_pub.publish(msg)
 
     def control_callback(self, msg: Command):
-        self.get_logger().info(f"Received control command:")
+        # self.get_logger().info(f"Received control command:")
         SystemContext.control_state.is_controller_connected = True
+        SystemContext.control_state.is_active = msg.is_active
+        # self.get_logger().info(f"  is_controller_connected: {msg.is_active}")
 
         # toggle
         SystemContext.control_state.move = msg.move
@@ -209,6 +211,11 @@ class RBY1Node(Node):
         logging.info(f"Attempting to connect to RB-Y1... (Address: {address}, Model: {model})")
 
         self.robot = rby.create_robot(address, model)
+        connected = self.robot.connect()
+        if not connected:
+            logging.critical("Failed to connect to RB-Y1. Exiting program.")
+            exit(1)
+        logging.info("Successfully connected to RB-Y1.")
 
         servo_pattern = "^(?!head_).*" if self.no_head else ".*"
         if not self.robot.is_power_on(servo_pattern):
@@ -220,9 +227,9 @@ class RBY1Node(Node):
         else:
             logging.info("Power is already on.")
 
-        if not self.robot.is_servo_on(".*"):
+        if not self.robot.is_servo_on(servo_pattern):
             logging.warning("Servo is off. Turning it on...")
-            if not self.robot.servo_on(".*"):
+            if not self.robot.servo_on(servo_pattern):
                 logging.critical("Failed to turn on the servo. Exiting program.")
                 exit(1)
             logging.info("Servo turned on successfully.")
@@ -260,8 +267,8 @@ class RBY1Node(Node):
         if self.robot.wait_for_control_ready(1000):
             ready_pose = np.deg2rad(
                 [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
-                [0.0, -15.0, 0.0, -120.0, 0.0, 70.0, 0.0] +
-                [0.0, 15.0, 0.0, -120.0, 0.0, 70.0, 0.0])
+                [0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0] +
+                [0.0, 15.0, 0.0, -120.0, 0.0, 30.0, 15.0])
             cbc = (
                 rby.ComponentBasedCommandBuilder()
                 .set_body_command(
@@ -327,22 +334,30 @@ class RBY1Node(Node):
             if self.stream is not None:
                 self.stream.cancel()
                 self.stream = None
+                print("Stream cancelled due to signal handling.")
 
         if SystemContext.rby1_state.is_stopped:
             if self.stream is not None:
                 self.stream.cancel()
                 self.stream = None
+                print("Stream cancelled due to signal handling.")
             SystemContext.rby1_state.is_initialized = False
+            return
+
+        if not SystemContext.control_state.is_active:
             return
 
         if self.stream is None:
             if self.robot.wait_for_control_ready(0):
                 self.stream = self.robot.create_command_stream()
+                self.get_logger().info("Starting impedance control stream...")
+
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
                 SystemContext.rby1_state.right_arm_locked_pose = SystemContext.rby1_state.right_ee_position.copy()
                 SystemContext.rby1_state.left_arm_locked_pose = SystemContext.rby1_state.left_ee_position.copy()
                 SystemContext.rby1_state.torso_locked_pose = SystemContext.rby1_state.torso_ee_position.copy()
+
 
         if SystemContext.control_state.is_controller_connected:
             SystemContext.control_state.desired_right_ee_T = pos_to_se3(
@@ -361,7 +376,7 @@ class RBY1Node(Node):
             if SystemContext.control_state.move:
                 SystemContext.rby1_state.is_right_following = True
                 SystemContext.rby1_state.is_left_following = True
-                SystemContext.rby1_state.is_torso_following = True
+                SystemContext.rby1_state.is_torso_following = False
                 if self.reset_done == False:
                     self.right_reset = True
                     self.left_reset = True
@@ -377,6 +392,7 @@ class RBY1Node(Node):
             SystemContext.rby1_state.is_left_following = False
             SystemContext.rby1_state.is_torso_following = False
             self.reset_done = False
+
 
         if self.stream:
             try:
@@ -413,7 +429,6 @@ class RBY1Node(Node):
                         .add_joint_limit("torso_2", -2.617993878, -0.2)
                         .set_stop_joint_position_tracking_error(0)
                         .set_stop_orientation_tracking_error(0)
-                        .set_stop_joint_position_tracking_error(0)
                         .set_reset_reference(self.right_reset | self.left_reset | self.torso_reset)
                     )
                     ctrl_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
@@ -425,7 +440,7 @@ class RBY1Node(Node):
                 else:
                     torso_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
                         .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([400.] * 6)
                         .set_joint_torque_limit([500] * 6)
@@ -438,7 +453,7 @@ class RBY1Node(Node):
                     )
                     right_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
                         .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
@@ -451,7 +466,7 @@ class RBY1Node(Node):
                     )
                     left_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
                         .set_minimum_time(self.settings.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
@@ -483,15 +498,9 @@ class RBY1Node(Node):
                 self.stream.send_command(
                     rby.RobotCommandBuilder().set_command(
                         rby.ComponentBasedCommandBuilder()
-                        .set_head_command(
-                            rby.JointPositionCommandBuilder()
-                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                            .set_position([0.0, 0.0])
-                            .set_minimum_time(self.settings.dt * 1.01)
-                        )
                         .set_mobility_command(
                             rby.SE2VelocityCommandBuilder()
-                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
                             .set_velocity(SystemContext.rby1_state.mobile_linear_velocity,
                                             SystemContext.rby1_state.mobile_angular_velocity)
                             .set_minimum_time(self.settings.dt * 1.01)

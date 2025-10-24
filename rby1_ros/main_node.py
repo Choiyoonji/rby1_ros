@@ -1,4 +1,5 @@
 import numpy as np
+import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
@@ -16,6 +17,12 @@ class MainNode(Node):
         self.move: bool = False
         self.stop: bool = False
         self.record: bool = False
+
+        self._awaiting_meta = False
+        self._meta_future = None
+        self._last_meta_req_ts = 0.0
+        self._meta_timeout = 5.0      # 서비스 응답 타임아웃(초)
+        self._cooldown = 1.0          # 실패/타임아웃 후 최소 대기(초)
 
         self.main_state = MainState()
 
@@ -59,6 +66,21 @@ class MainNode(Node):
         self.main_timer = self.create_timer(1/100.0, self.main_loop)
         self.meta_timer = self.create_timer(1/20.0, self.meta_loop)
         self.command_timer = self.create_timer(1/20.0, self.publish_command)
+
+        # 초기화 서비스
+        self._awaiting_meta_init = False
+        self._meta_init_future = None
+        self._meta_init_last_ts = 0.0
+        self._meta_init_timeout = 5.0      # 초기화 응답 타임아웃 (초)
+        self._meta_init_cooldown = 1.0     # 초기화 실패/타임아웃 후 재시도 쿨다운 (초)
+
+        # 데이터 서비스
+        self._awaiting_meta_data = False
+        self._meta_data_future = None
+        self._meta_data_last_ts = 0.0
+        self._meta_data_timeout = 2.0      # 데이터 응답 타임아웃 (초)
+        self._meta_data_cooldown = 0.0     # 데이터는 주기 폴링 성격 → 0으로 두고 single-flight만 보장
+
         
         self.command_img = np.zeros((480, 640, 3), dtype=np.uint8)
     
@@ -67,7 +89,8 @@ class MainNode(Node):
 
     def send_meta_initial_offset(self, check_pose: bool):
         self.init_req.initialize = True
-        self.init_req.check_pose = check_pose
+        # self.init_req.check_pose = check_pose
+        self.init_req.check_pose =  False
 
         self.init_req.left_ready_pos = EEpos()
         self.init_req.right_ready_pos = EEpos()
@@ -137,60 +160,173 @@ class MainNode(Node):
             self.command_pub.publish(command_msg)
 
     def meta_loop(self):
+        # 동작 조건 미충족 시 빠르게 리턴 (타이머 콜백은 짧게!)
         if not self.move:
             self.main_state.is_meta_initialized = False
+            self.main_state.is_meta_ready = False
             return
+
+        self.get_logger().info('Meta loop executing')
 
         if not self.main_state.is_robot_connected:
             self.get_logger().warning('Robot is not connected')
             return
-        
+
         if not self.main_state.is_robot_initialized:
             self.get_logger().warning('Robot is not initialized')
             return
-        
+
+        now = time.time()
+
+        # -------------------------------
+        # (A) 초기화 상태머신
+        # -------------------------------
         if not self.main_state.is_meta_initialized:
-            initial_future: rclpy.Future = self.send_meta_initial_offset(check_pose=self.main_state.is_robot_in_ready_pose)
-            rclpy.spin_until_future_complete(self, initial_future)
+            # 요청 중이 아니고 쿨다운 지났으면 → 1회 발사
+            if (not self._awaiting_meta_init) and (now - self._meta_init_last_ts >= self._meta_init_cooldown):
+                self.get_logger().info('Meta initialization requested.')
+                try:
+                    self._meta_init_future = self.send_meta_initial_offset(
+                        check_pose=self.main_state.is_robot_in_ready_pose
+                    )
+                except Exception as e:
+                    self.get_logger().error(f'call_async(set_offset) failed: {repr(e)}')
+                    self._meta_init_last_ts = now
+                    return
+                self._awaiting_meta_init = True
+                self._meta_init_last_ts = now
+                return  # 즉시 리턴(블로킹 금지)
 
-            response = initial_future.result()
+            # 요청 중이면 완료/타임아웃만 확인
+            if self._awaiting_meta_init:
+                # 타임아웃
+                if (now - self._meta_init_last_ts) > self._meta_init_timeout:
+                    self.get_logger().error('Meta initialization timed out.')
+                    try:
+                        self._meta_init_future.cancel()
+                    except Exception:
+                        pass
+                    self._awaiting_meta_init = False
+                    self._meta_init_future = None
+                    self._meta_init_last_ts = now  # 쿨다운 시작
+                    return
 
-            if response is None:
-                self.get_logger().error('Failed to call Meta initial offset service')
-                self.main_state.is_meta_initialized = False
-                return
-            
-            if not response.success:
-                self.get_logger().error(f'Failed to initialize Meta offsets {response.check1, response.check2, response.check3}')
-                self.main_state.is_meta_initialized = False
-                return
-            
-            self.get_logger().info('Meta initialized successfully')
-            self.main_state.is_meta_initialized = True
-            self.main_state.is_robot_in_ready_pose = False
+                # 완료
+                if self._meta_init_future.done():
+                    try:
+                        resp = self._meta_init_future.result()
+                    except Exception as e:
+                        self.get_logger().error(f'Meta init future exception: {repr(e)}')
+                        self._awaiting_meta_init = False
+                        self._meta_init_future = None
+                        self._meta_init_last_ts = now
+                        return
 
-        data_future: rclpy.Future = self.send_meta_get_data()
-        rclpy.spin_until_future_complete(self, data_future)
+                    ok = bool(getattr(resp, 'success', False))
+                    c1 = bool(getattr(resp, 'check1', False))
+                    c2 = bool(getattr(resp, 'check2', False))
+                    c3 = bool(getattr(resp, 'check3', False))
+                    self.get_logger().info(
+                        f'Meta initialization response received. success={ok}, checks=({c1},{c2},{c3})'
+                    )
 
-        response = data_future.result()
-        if response is None:
-            self.get_logger().error('Failed to call Meta data service')
+                    if ok:
+                        self.get_logger().info('Meta initialized successfully')
+                        self.main_state.is_meta_initialized = True
+                        # ready pose 소비
+                        self.main_state.is_robot_in_ready_pose = False
+                    else:
+                        self.get_logger().warning('Meta initialization returned success=False')
+
+                    self._awaiting_meta_init = False
+                    self._meta_init_future = None
+                    self._meta_init_last_ts = now  # 성공/실패 모두 쿨다운 시작
+                    return
+
+            # 아직 초기화 안 끝났으면 데이터 요청 안 함
             return
 
-        if len(response.error_msg) > 0:
-            self.get_logger().error(f'Meta data error: {response.error_msg}')
-            return
+        # -------------------------------
+        # (B) 데이터 상태머신 (초기화 후에만)
+        # -------------------------------
+        self.get_logger().info('Meta data requested.')
 
-        self.get_logger().info('Meta data received successfully')
-        self.main_state.is_meta_ready = True
-        self.main_state.desired_head_position = np.array(response.head_ee_pos.position.data)
-        self.main_state.desired_head_quaternion = np.array(response.head_ee_pos.quaternion.data)
-        self.main_state.desired_right_arm_position = np.array(response.right_ee_pos.position.data)
-        self.main_state.desired_right_arm_quaternion = np.array(response.right_ee_pos.quaternion.data)
-        self.main_state.desired_left_arm_position = np.array(response.left_ee_pos.position.data)
-        self.main_state.desired_left_arm_quaternion = np.array(response.left_ee_pos.quaternion.data)
+        # 요청 중이 아니면 1회 발사
+        if (not self._awaiting_meta_data) and (now - self._meta_data_last_ts >= self._meta_data_cooldown):
+            try:
+                self._meta_data_future = self.send_meta_get_data()
+            except Exception as e:
+                self.get_logger().error(f'call_async(get_data) failed: {repr(e)}')
+                self._meta_data_last_ts = now
+                return
+            self._awaiting_meta_data = True
+            self._meta_data_last_ts = now
+            return  # 즉시 리턴
+
+        if self._awaiting_meta_data:
+            # 타임아웃
+            if (now - self._meta_data_last_ts) > self._meta_data_timeout:
+                self.get_logger().error('Meta data timed out.')
+                try:
+                    self._meta_data_future.cancel()
+                except Exception:
+                    pass
+                self._awaiting_meta_data = False
+                self._meta_data_future = None
+                self._meta_data_last_ts = now
+                self.main_state.is_meta_ready = False
+                return
+
+            # 완료
+            if self._meta_data_future.done():
+                try:
+                    response = self._meta_data_future.result()
+                except Exception as e:
+                    self.get_logger().error(f'Meta data future exception: {repr(e)}')
+                    self._awaiting_meta_data = False
+                    self._meta_data_future = None
+                    self._meta_data_last_ts = now
+                    self.main_state.is_meta_ready = False
+                    return
+
+                if response is None:
+                    self.get_logger().error('Failed to call Meta data service (None)')
+                    self._awaiting_meta_data = False
+                    self._meta_data_future = None
+                    self._meta_data_last_ts = now
+                    self.main_state.is_meta_ready = False
+                    return
+
+                if len(response.error_msg) > 0:
+                    self.get_logger().error(f'Meta data error: {response.error_msg}')
+                    self._awaiting_meta_data = False
+                    self._meta_data_future = None
+                    self._meta_data_last_ts = now
+                    self.main_state.is_meta_ready = False
+                    return
+
+                # 정상 수신 → 상태 업데이트
+                self.get_logger().info('Meta data received successfully')
+                self.main_state.is_meta_ready = True
+                self.main_state.desired_head_position = np.array(response.head_ee_pos.position.data)
+                self.main_state.desired_head_quaternion = np.array(response.head_ee_pos.quaternion.data)
+                self.main_state.desired_right_arm_position = np.array(response.right_ee_pos.position.data)
+                self.main_state.desired_right_arm_quaternion = np.array(response.right_ee_pos.quaternion.data)
+                self.main_state.desired_left_arm_position = np.array(response.left_ee_pos.position.data)
+                self.main_state.desired_left_arm_quaternion = np.array(response.left_ee_pos.quaternion.data)
+
+                self._awaiting_meta_data = False
+                self._meta_data_future = None
+                self._meta_data_last_ts = now
+                return
 
     def reset_state(self):
+        # 초기화/데이터 상태머신도 함께 리셋
+        self._awaiting_meta_init = False
+        self._meta_init_future = None
+        self._awaiting_meta_data = False
+        self._meta_data_future = None
+
         self.main_state.is_meta_initialized = False
         self.main_state.is_meta_ready = False
 
@@ -213,10 +349,10 @@ class MainNode(Node):
             else:
                 self.ready = True
                 self.main_state.is_robot_in_ready_pose = True
-        elif key == ord('m'):
+        elif key == ord('f'):
             self.get_logger().info('Received move command')
             self.move = not self.move
-        elif key == ord('s'):
+        elif key == ord('g'):
             self.get_logger().info('Received stop command')
             self.stop = True
         elif key == ord('q'):
@@ -224,7 +360,7 @@ class MainNode(Node):
             cv2.destroyAllWindows()
             self.destroy_node()
             rclpy.shutdown()
-        elif key == ord('c'):
+        elif key == ord('h'):
             self.get_logger().info('Received record command')
             self.record = not self.record
             self.record_pub.publish(Bool(data=self.record))

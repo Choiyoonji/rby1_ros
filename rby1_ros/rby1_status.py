@@ -33,7 +33,7 @@ class RBY1Status:
 
     # Flags
     is_initialized: bool = False
-    is_stopped: bool = False
+    is_stopped: bool = True
     is_torso_following: bool = False
     is_right_following: bool = False
     is_left_following: bool = False

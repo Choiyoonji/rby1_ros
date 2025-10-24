@@ -162,10 +162,10 @@ class MetaNode(Node):
                 ready_pos['left'][1] - ready_pos['right'][1] + 0.02)
         # 3) 각도 차이(쿼터니언) < 임계값
         th = np.deg2rad(angle_thresh_deg)
-        check_3 = (diff_R < th) and (diff_L < th) and (diff_H < th)
+        check_3 = (diff_R < th) and (diff_L < th)
 
         available = check_1 and check_2 and check_3
-        return available, [check_1, check_2, check_3]
+        return available, [bool(check_1), bool(check_2), bool(check_3)]
 
     def set_init_offset(self, request, response):
         """
@@ -228,6 +228,13 @@ class MetaNode(Node):
 
             self.get_logger().info('Meta offset initialized successfully.')
             response.success, response.check1, response.check2, response.check3 = True, checks[0], checks[1], checks[2]
+            self.get_logger().info(f'Offset details:\n'
+                                   f' Head Pos Offset: {self.meta_state.head_pos_offset}\n'
+                                   f' Head Rot Offset: {self.meta_state.head_rot_offset}\n'
+                                   f' Right Pos Offset: {self.meta_state.right_pos_offset}\n'
+                                   f' Right Rot Offset: {self.meta_state.right_rot_offset}\n'
+                                   f' Left Pos Offset: {self.meta_state.left_pos_offset}\n'
+                                   f' Left Rot Offset: {self.meta_state.left_rot_offset}\n')
             return response
 
         # 실패 처리
@@ -239,6 +246,7 @@ class MetaNode(Node):
                     
     def get_meta_status(self, request, response):
         if request.request:
+            self.get_logger().info("Meta status requested.")
             if self.meta_state.is_initialized:
                 data = self.get_data()
 
@@ -247,15 +255,15 @@ class MetaNode(Node):
 
                     # Apply offsets
                     self.meta_state.head_position = np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset
-                    self.meta_state.head_rotation = np.array(data["head"]["rotmat"]) @ self.meta_state.head_rot_offset
+                    self.meta_state.head_rotation = np.array(data["head"]["rotmat"]) # @ self.meta_state.head_rot_offset
                     self.meta_state.head_quaternion = R.from_matrix(self.meta_state.head_rotation).as_quat()
 
                     self.meta_state.right_arm_position = np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset
-                    self.meta_state.right_arm_rotation = np.array(data["right"]["rotmat"]) @ self.meta_state.right_rot_offset
+                    self.meta_state.right_arm_rotation = np.array(data["right"]["rotmat"]) # @ self.meta_state.right_rot_offset
                     self.meta_state.right_arm_quaternion = R.from_matrix(self.meta_state.right_arm_rotation).as_quat()
 
                     self.meta_state.left_arm_position = np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset
-                    self.meta_state.left_arm_rotation = np.array(data["left"]["rotmat"]) @ self.meta_state.left_rot_offset
+                    self.meta_state.left_arm_rotation = np.array(data["left"]["rotmat"]) # @ self.meta_state.left_rot_offset
                     self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
 
                     response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
