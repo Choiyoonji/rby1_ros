@@ -8,6 +8,8 @@ from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 import cv2
 from rby1_ros.main_status import MainStatus as MainState
+from rby1_ros.rby1_dyn import RBY1Dyn
+from rby1_ros.utils import *
 
 class MainNode(Node):
     def __init__(self):
@@ -64,8 +66,9 @@ class MainNode(Node):
         self.data_req = MetaDataReq.Request()
 
         self.main_timer = self.create_timer(1/100.0, self.main_loop)
-        self.meta_timer = self.create_timer(1/20.0, self.meta_loop)
+        self.meta_timer = self.create_timer(1/50.0, self.meta_loop)
         self.command_timer = self.create_timer(1/20.0, self.publish_command)
+        self.head_command_timer = self.create_timer(1/50.0, self.head_command)
 
         # 초기화 서비스
         self._awaiting_meta_init = False
@@ -106,6 +109,9 @@ class MainNode(Node):
         self.init_req.head_ready_pos.quaternion = Float32MultiArray(data=self.main_state.current_torso_quaternion.tolist())
 
         return self.meta_initialize_client.call_async(self.init_req)
+    
+    def head_command(self):
+        pass
 
     def send_meta_get_data(self):
         self.data_req.request = True
@@ -134,7 +140,7 @@ class MainNode(Node):
             command_msg = Command()
 
             command_msg.is_active = self.main_state.is_meta_ready
-            command_msg.control_mode = "component"
+            command_msg.control_mode = "joint_position"
 
             command_msg.desired_head_ee_pos = EEpos()
             command_msg.desired_head_ee_pos.position = Float32MultiArray(data=self.main_state.desired_head_position.tolist())
@@ -147,6 +153,16 @@ class MainNode(Node):
             command_msg.desired_left_ee_pos = EEpos()
             command_msg.desired_left_ee_pos.position = Float32MultiArray(data=self.main_state.desired_left_arm_position.tolist())
             command_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
+
+            if command_msg.control_mode == "joint_position":
+                target_T = {
+                    'link_torso_5': pos_to_se3(self.main_state.desired_head_position, self.main_state.desired_head_quaternion),
+                    'link_right_6': pos_to_se3(self.main_state.desired_right_arm_position, self.main_state.desired_right_arm_quaternion),
+                    'link_left_6': pos_to_se3(self.main_state.desired_left_arm_position, self.main_state.desired_left_arm_quaternion)
+                }
+                joint_positions = RBY1Dyn().get_ik(target_T)
+                self.main_state.desired_joint_positions = 0.0 * np.ones(20, dtype=np.float32)  # 기본값 설정
+                command_msg.desired_joint_positions = Float32MultiArray(data=self.main_state.desired_joint_positions.tolist())
 
             command_msg.estop = False
 

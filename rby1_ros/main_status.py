@@ -27,3 +27,5 @@ class MainStatus:
     desired_right_arm_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
     desired_left_arm_position: np.ndarray = field(default_factory=lambda: np.array([]))
     desired_left_arm_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
+
+    desired_joint_positions: np.ndarray = field(default_factory=lambda: np.array([]))

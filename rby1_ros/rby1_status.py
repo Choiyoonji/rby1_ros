@@ -7,6 +7,13 @@ class RBY1Status:
 
     is_robot_connected: bool = False
 
+    q_limits_upper: np.ndarray = field(default_factory=lambda: np.array([]))
+    q_limits_lower: np.ndarray = field(default_factory=lambda: np.array([]))
+    qdot_limits_upper: np.ndarray = field(default_factory=lambda: np.array([]))
+    qddot_limits_upper: np.ndarray = field(default_factory=lambda: np.array([]))
+
+    dt : float = 1.0
+
     joint_positions: np.ndarray = field(default_factory=lambda: np.array([]))
     joint_velocities: np.ndarray = field(default_factory=lambda: np.array([]))
     joint_currents: np.ndarray = field(default_factory=lambda: np.array([]))

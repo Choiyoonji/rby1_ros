@@ -18,7 +18,8 @@ logging.basicConfig(level=logging.INFO)
 
 @dataclass(frozen=True)
 class Settings:
-    dt: float = 0.1  # 10 Hz
+    dt: float = 0.05  # 20 Hz
+    initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
 
@@ -28,6 +29,8 @@ class Settings:
     rby1_ip = "192.168.0.83"
     port = 50051
     model = "a"
+
+    damping_ratio: float = 1.0
 
     mobile_linear_acceleration_gain: float = 0.15
     mobile_angular_acceleration_gain: float = 0.15
@@ -201,6 +204,14 @@ class RBY1Node(Node):
 
             SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
+    def set_limits(self):
+        SystemContext.rby1_state.q_limits_upper = self.dyn_robot.get_limit_q_upper(self.dyn_state)
+        SystemContext.rby1_state.q_limits_lower = self.dyn_robot.get_limit_q_lower(self.dyn_state)
+        SystemContext.rby1_state.qdot_limits_upper = self.dyn_robot.get_limit_qdot_upper(self.dyn_state)
+        SystemContext.rby1_state.qddot_limits_upper = self.dyn_robot.get_limit_qddot_upper(self.dyn_state)
+        SystemContext.rby1_state.qdot_limits_upper[SystemContext.robot_model.right_arm_idx[-1]] *= 10
+        SystemContext.rby1_state.qdot_limits_upper[SystemContext.robot_model.left_arm_idx[-1]] *= 10
+
     def is_connected(self):
         return self.robot is not None
 
@@ -257,6 +268,8 @@ class RBY1Node(Node):
         self.dyn_robot = self.robot.get_dynamics()
         self.dyn_state = self.dyn_robot.make_state(["base", "link_torso_5", "link_right_arm_6", "link_left_arm_6"],
                                      SystemContext.robot_model.robot_joint_names)
+        
+        self.set_limits()
 
         SystemContext.rby1_state.is_robot_connected = True
         
@@ -301,6 +314,7 @@ class RBY1Node(Node):
         logging.info("Stopping the robot...")
         SystemContext.rby1_state.is_stopped = True
         SystemContext.control_state.stop = False
+        SystemContext.rby1_state.dt = self.settings.initial_dt
 
     def estop(self):
         logging.critical("Emergency Stop triggered! Shutting down the robot immediately.")
@@ -418,7 +432,7 @@ class RBY1Node(Node):
                     ctrl_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
                         .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_minimum_time(self.settings.dt * 1.01)
+                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
                         .set_joint_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
                         .set_joint_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
                         .add_joint_limit("right_arm_3", -2.6, -0.5)
@@ -437,11 +451,11 @@ class RBY1Node(Node):
                     ctrl_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 20, np.pi * 80)
 
-                else:
+                elif SystemContext.control_state.control_mode == "component":
                     torso_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
                         .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
-                        .set_minimum_time(self.settings.dt * 1.01)
+                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
                         .set_joint_stiffness([400.] * 6)
                         .set_joint_torque_limit([500] * 6)
                         .add_joint_limit("torso_1", -0.523598776, 1.3)
@@ -454,7 +468,7 @@ class RBY1Node(Node):
                     right_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
                         .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
-                        .set_minimum_time(self.settings.dt * 1.01)
+                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
                         .add_joint_limit("right_arm_3", -2.6, -0.5)
@@ -467,7 +481,7 @@ class RBY1Node(Node):
                     left_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
                         .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
-                        .set_minimum_time(self.settings.dt * 1.01)
+                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
                         .set_joint_stiffness([80, 80, 80, 80, 80, 80, 40])
                         .set_joint_torque_limit([30] * 7)
                         .add_joint_limit("left_arm_3", -2.6, -0.5)
@@ -491,6 +505,23 @@ class RBY1Node(Node):
                         .set_left_arm_command(left_builder)
                     )
 
+                elif SystemContext.control_state.control_mode == "joint_position":
+                    ctrl_builder = (
+                        rby.JointImpedanceControlCommandBuilder()
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
+                        .set_position(nd_to_list(
+                            np.clip(SystemContext.control_state.desired_joint_positions,
+                                    SystemContext.rby1_state.q_limits_lower,
+                                    SystemContext.rby1_state.q_limits_upper)
+                        ))
+                        .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper.tolist()[2:22])
+                        .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper.tolist()[2:22]*30)
+                        .set_damping(self.settings.damping_ratio)
+                        .set_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
+                        .set_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
+                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
+                    )
+
                 self.torso_reset = False
                 self.right_reset = False
                 self.left_reset = False
@@ -510,6 +541,8 @@ class RBY1Node(Node):
                         )
                     )
                 )
+                SystemContext.rby1_state.dt -= self.settings.dt
+                SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
 
             except Exception as e:
                 logging.error(e)

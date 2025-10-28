@@ -26,27 +26,46 @@ class RBY1Dyn:
     def __init__(self):
         self.robot = load_robot_from_urdf("/home/choiyj/rby1-sdk/models/rby1a/urdf/model_v1.0.urdf", base_link_name="base")
         self.dyn_robot = Robot(self.robot)
-        self.links = ["base", "link_torso_5", "link_right_arm_6", "link_left_arm_6"]
+        self.links: list[str] = ["base", "link_torso_5", "link_right_arm_6", "link_left_arm_6"]
         self.state = self.dyn_robot.make_state(self.links, RBY1_JOINT_NAMES)
+        robot_max_q = self.dyn_robot.get_limit_q_upper(self.state)
+        robot_min_q = self.dyn_robot.get_limit_q_lower(self.state)
+        robot_max_qdot = self.dyn_robot.get_limit_qdot_upper(self.state)
+        robot_max_qddot = self.dyn_robot.get_limit_qddot_upper(self.state)
+        print("Robot max q:", robot_max_q)
+        print("Robot min q:", robot_min_q)
+        print("Robot max qdot:", robot_max_qdot)
+        print("Robot max qddot:", robot_max_qddot)
+
 
     def get_fk(self, joint_positions):
         self.state.set_q(joint_positions)
+        self.state.set_qdot(np.zeros_like(joint_positions))
         self.dyn_robot.compute_forward_kinematics(self.state)
+        self.dyn_robot.compute_diff_forward_kinematics(self.state)
         fk_results = {}
         for link_idx in range(1, 4):
             link_name = self.links[link_idx]
             fk_results[link_name] = self.dyn_robot.compute_transformation(self.state, 0, link_idx)
         return fk_results
     
+    def get_jacobian(self):
+        J = self.dyn_robot.compute_body_jacobian(self.state, 0, 2)
+        return J
+    
 
 if __name__ == "__main__":
     print(rby.Model_A().robot_joint_names)
     rby1_dyn = RBY1Dyn()
-    joint_positions = np.deg2rad([0.0, 0.0] +
-                [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
-                [0.0, -0.0, 0.0, -100.0, 20.0, 20.0, 90.0] +
-                [0.0, 0.0, 0.0, -100.0, 20.0, 20.0, -90.0])
+    # joint_positions = np.deg2rad([0.0, 0.0] +
+    #             [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
+    #             [0.0, -15.0, 0.0, -120.0, 0.0, 70.0, 0.0] +
+    #             [0.0, 15.0, 0.0, -120.0, 0.0, 70.0, 0.0])
+    joint_positions = np.deg2rad([0.0]*24)
     fk_results = rby1_dyn.get_fk(joint_positions)
     for link_name, transform in fk_results.items():
         print(f"Link: {link_name}")
         print(transform)
+
+    J = rby1_dyn.get_jacobian()
+    print("Jacobian:\n", J.T)
