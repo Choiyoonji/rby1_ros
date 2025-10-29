@@ -155,13 +155,14 @@ class MainNode(Node):
             command_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
 
             if command_msg.control_mode == "joint_position":
+                current_joint_positions = np.array(self.main_state.current_joint_positions)
                 target_T = {
                     'link_torso_5': pos_to_se3(self.main_state.desired_head_position, self.main_state.desired_head_quaternion),
                     'link_right_6': pos_to_se3(self.main_state.desired_right_arm_position, self.main_state.desired_right_arm_quaternion),
                     'link_left_6': pos_to_se3(self.main_state.desired_left_arm_position, self.main_state.desired_left_arm_quaternion)
                 }
-                joint_positions = RBY1Dyn().get_ik(target_T)
-                self.main_state.desired_joint_positions = 0.0 * np.ones(20, dtype=np.float32)  # 기본값 설정
+                joint_positions = RBY1Dyn().get_ik(target_T, current_joint_positions)
+                self.main_state.desired_joint_positions = joint_positions  # 기본값 설정
                 command_msg.desired_joint_positions = Float32MultiArray(data=self.main_state.desired_joint_positions.tolist())
 
             command_msg.estop = False

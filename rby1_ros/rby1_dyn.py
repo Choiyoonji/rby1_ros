@@ -53,6 +53,9 @@ class RBY1Dyn:
         J = self.dyn_robot.compute_body_jacobian(self.state, 0, 2)
         return J
     
+    def get_ik(self, target_T, initial_q, max_iters=100, tol=1e-6)->np.ndarray:
+        print("IK is not implemented yet.")
+        return initial_q
 
 if __name__ == "__main__":
     print(rby.Model_A().robot_joint_names)

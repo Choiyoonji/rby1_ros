@@ -253,17 +253,17 @@ class MetaNode(Node):
                 if data:
                     response.error_msg = ""
 
-                    # Apply offsets
-                    self.meta_state.head_position = np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset
-                    self.meta_state.head_rotation = np.array(data["head"]["rotmat"]) # @ self.meta_state.head_rot_offset
+                    # Apply offsets and low pass filter
+                    self.meta_state.head_position = 0.7 * self.meta_state.head_position + 0.3 * (np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset)
+                    self.meta_state.head_rotation = 0.7 * self.meta_state.head_rotation + 0.3 * (np.array(data["head"]["rotmat"]) + self.meta_state.head_rot_offset)
                     self.meta_state.head_quaternion = R.from_matrix(self.meta_state.head_rotation).as_quat()
 
-                    self.meta_state.right_arm_position = np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset
-                    self.meta_state.right_arm_rotation = np.array(data["right"]["rotmat"]) # @ self.meta_state.right_rot_offset
+                    self.meta_state.right_arm_position = 0.7 * self.meta_state.right_arm_position + 0.3 * (np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset)
+                    self.meta_state.right_arm_rotation = 0.7 * self.meta_state.right_arm_rotation + 0.3 * (np.array(data["right"]["rotmat"]) + self.meta_state.right_rot_offset)
                     self.meta_state.right_arm_quaternion = R.from_matrix(self.meta_state.right_arm_rotation).as_quat()
 
-                    self.meta_state.left_arm_position = np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset
-                    self.meta_state.left_arm_rotation = np.array(data["left"]["rotmat"]) # @ self.meta_state.left_rot_offset
+                    self.meta_state.left_arm_position = 0.7 * self.meta_state.left_arm_position + 0.3 * (np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset)
+                    self.meta_state.left_arm_rotation = 0.7 * self.meta_state.left_arm_rotation + 0.3 * (np.array(data["left"]["rotmat"]) + self.meta_state.left_rot_offset)
                     self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
 
                     response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
