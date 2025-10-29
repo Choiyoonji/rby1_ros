@@ -10,6 +10,9 @@ from dataclasses import dataclass, field
 from typing import Union
 import logging
 import rby1_sdk as rby
+import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
@@ -270,6 +273,15 @@ class RBY1Node(Node):
                                      SystemContext.robot_model.robot_joint_names)
         
         self.set_limits()
+
+
+        dt, localtime_string = self.robot.get_system_time()
+        logging.info(f"Robot System Time: {dt}, {localtime_string}")
+        logging.info("# Change to TimeZone")
+        dt = dt.astimezone(ZoneInfo("Asia/Seoul"))
+        logging.info(f" -- {'SUCCESS' if self.robot.set_system_time(dt) else 'FAIL'}")
+        time.sleep(0.5)  # Need for changing timezone
+        logging.info(f"Robot System Time: {self.robot.get_system_time()}")
 
         SystemContext.rby1_state.is_robot_connected = True
         
