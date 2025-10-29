@@ -199,8 +199,8 @@ class RBY1Node(Node):
             SystemContext.control_state.desired_right_ee_position["quaternion"] = np.array(msg.desired_right_ee_pos.quaternion.data)
             SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_pos.position.data)
             SystemContext.control_state.desired_left_ee_position["quaternion"] = np.array(msg.desired_left_ee_pos.quaternion.data)
-            SystemContext.control_state.desired_head_ee_position["position"] = np.array(msg.desired_head_ee_pos.position.data)
-            SystemContext.control_state.desired_head_ee_position["quaternion"] = np.array(msg.desired_head_ee_pos.quaternion.data)
+            SystemContext.control_state.desired_torso_ee_position["position"] = np.array(msg.desired_torso_ee_pos.position.data)
+            SystemContext.control_state.desired_torso_ee_position["quaternion"] = np.array(msg.desired_torso_ee_pos.quaternion.data)
 
             SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
@@ -382,9 +382,9 @@ class RBY1Node(Node):
                 SystemContext.control_state.desired_left_ee_position["position"],
                 SystemContext.control_state.desired_left_ee_position["quaternion"]
             )
-            SystemContext.control_state.desired_head_ee_T = pos_to_se3(
-                SystemContext.control_state.desired_head_ee_position["position"],
-                SystemContext.control_state.desired_head_ee_position["quaternion"]
+            SystemContext.control_state.desired_torso_ee_T = pos_to_se3(
+                SystemContext.control_state.desired_torso_ee_position["position"],
+                SystemContext.control_state.desired_torso_ee_position["quaternion"]
             )
 
             if SystemContext.control_state.move:
@@ -423,7 +423,7 @@ class RBY1Node(Node):
                     left_T = SystemContext.rby1_state.left_arm_locked_pose
                 
                 if SystemContext.rby1_state.is_torso_following:
-                    torso_T = SystemContext.control_state.desired_head_ee_T
+                    torso_T = SystemContext.control_state.desired_torso_ee_T
                     SystemContext.rby1_state.torso_locked_pose = torso_T.copy()
                 else:
                     torso_T = SystemContext.rby1_state.torso_locked_pose

@@ -26,6 +26,8 @@ class MainNode(Node):
         self._meta_timeout = 5.0      # 서비스 응답 타임아웃(초)
         self._cooldown = 1.0          # 실패/타임아웃 후 최소 대기(초)
 
+        self.torso_pos_weight = 0.2
+
         self.main_state = MainState()
 
         self.record_pub = self.create_publisher(
@@ -48,6 +50,11 @@ class MainNode(Node):
         self.command_pub = self.create_publisher(
             Command,
             '/control/command',
+            10)
+        
+        self.head_pub = self.create_publisher(
+            Float32MultiArray,
+            '/control/head_command',
             10)
         
         self.meta_initialize_client = self.create_client(
@@ -111,7 +118,22 @@ class MainNode(Node):
         return self.meta_initialize_client.call_async(self.init_req)
     
     def head_command(self):
-        pass
+        if not self.main_state.is_robot_connected:
+            return
+        if not self.main_state.is_meta_ready:
+            return
+        if not self.move:
+            return
+        head_cmd_msg = Float32MultiArray()
+
+        T_base2head = pos_to_se3(self.main_state.desired_head_position, self.main_state.desired_head_quaternion)
+        T_base2torso = pos_to_se3(self.main_state.current_torso_position, self.main_state.current_torso_quaternion)
+
+        T_torso2head = np.linalg.pinv(T_base2torso) @ T_base2head
+        
+        head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_torso2head)
+        head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
+        self.head_pub.publish(head_cmd_msg)
 
     def send_meta_get_data(self):
         self.data_req.request = True
@@ -130,6 +152,7 @@ class MainNode(Node):
         
         self.main_state.current_torso_position = np.array(msg.torso_ee_pos.position.data)
         self.main_state.current_torso_quaternion = np.array(msg.torso_ee_pos.quaternion.data)
+        self.main_state.desired_torso_quaternion = np.array(msg.torso_ee_pos.quaternion.data) # torso의 orientation은 그대로 유지
         self.main_state.current_right_arm_position = np.array(msg.right_ee_pos.position.data)
         self.main_state.current_right_arm_quaternion = np.array(msg.right_ee_pos.quaternion.data)
         self.main_state.current_left_arm_position = np.array(msg.left_ee_pos.position.data)
@@ -142,9 +165,10 @@ class MainNode(Node):
             command_msg.is_active = self.main_state.is_meta_ready
             command_msg.control_mode = "joint_position"
 
-            command_msg.desired_head_ee_pos = EEpos()
-            command_msg.desired_head_ee_pos.position = Float32MultiArray(data=self.main_state.desired_head_position.tolist())
-            command_msg.desired_head_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_head_quaternion.tolist())
+            command_msg.desired_torso_ee_pos = EEpos()
+
+            command_msg.desired_torso_ee_pos.position = Float32MultiArray(data=self.main_state.desired_torso_position.tolist())
+            command_msg.desired_torso_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_torso_quaternion.tolist())
 
             command_msg.desired_right_ee_pos = EEpos()
             command_msg.desired_right_ee_pos.position = Float32MultiArray(data=self.main_state.desired_right_arm_position.tolist())
@@ -157,7 +181,7 @@ class MainNode(Node):
             if command_msg.control_mode == "joint_position":
                 current_joint_positions = np.array(self.main_state.current_joint_positions)
                 target_T = {
-                    'link_torso_5': pos_to_se3(self.main_state.desired_head_position, self.main_state.desired_head_quaternion),
+                    'link_torso_5': pos_to_se3(self.main_state.desired_torso_position, self.main_state.desired_torso_quaternion),
                     'link_right_6': pos_to_se3(self.main_state.desired_right_arm_position, self.main_state.desired_right_arm_quaternion),
                     'link_left_6': pos_to_se3(self.main_state.desired_left_arm_position, self.main_state.desired_left_arm_quaternion)
                 }
@@ -326,6 +350,7 @@ class MainNode(Node):
                 self.get_logger().info('Meta data received successfully')
                 self.main_state.is_meta_ready = True
                 self.main_state.desired_head_position = np.array(response.head_ee_pos.position.data)
+                self.main_state.desired_torso_position = self.torso_pos_weight * np.array(response.head_ee_pos.position.data) # head pos의 일부만 torso로 맞춤
                 self.main_state.desired_head_quaternion = np.array(response.head_ee_pos.quaternion.data)
                 self.main_state.desired_right_arm_position = np.array(response.right_ee_pos.position.data)
                 self.main_state.desired_right_arm_quaternion = np.array(response.right_ee_pos.quaternion.data)
@@ -349,6 +374,8 @@ class MainNode(Node):
 
         self.main_state.desired_head_position = np.array([])
         self.main_state.desired_head_quaternion = np.array([])
+        self.main_state.desired_torso_position = np.array([])
+        self.main_state.desired_torso_quaternion = np.array([])
         self.main_state.desired_right_arm_position = np.array([])
         self.main_state.desired_right_arm_quaternion = np.array([])
         self.main_state.desired_left_arm_position = np.array([])
