@@ -24,8 +24,8 @@ class MetaStatus:
     left_arm_rotation: np.ndarray = field(default_factory=lambda: np.identity(3))
     left_arm_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    right_hand_position: np.ndarray = field(default_factory=lambda: np.array([]))
-    left_hand_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    right_hand_position: float = 0.0
+    left_hand_position: float = 0.0
 
     # Flags
     is_connected: bool = False

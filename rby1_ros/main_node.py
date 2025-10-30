@@ -130,7 +130,7 @@ class MainNode(Node):
         T_base2torso = pos_to_se3(self.main_state.current_torso_position, self.main_state.current_torso_quaternion)
 
         T_torso2head = np.linalg.pinv(T_base2torso) @ T_base2head
-        
+
         head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_torso2head)
         head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
         self.head_pub.publish(head_cmd_msg)
@@ -157,6 +157,9 @@ class MainNode(Node):
         self.main_state.current_right_arm_quaternion = np.array(msg.right_ee_pos.quaternion.data)
         self.main_state.current_left_arm_position = np.array(msg.left_ee_pos.position.data)
         self.main_state.current_left_arm_quaternion = np.array(msg.left_ee_pos.quaternion.data)
+
+        self.main_state.current_right_gripper_position = msg.right_gripper_pos
+        self.main_state.current_left_gripper_position = msg.left_gripper_pos
 
     def publish_command(self):
         if self.main_state.is_robot_connected:
@@ -188,6 +191,9 @@ class MainNode(Node):
                 joint_positions = RBY1Dyn().get_ik(target_T, current_joint_positions)
                 self.main_state.desired_joint_positions = joint_positions  # 기본값 설정
                 command_msg.desired_joint_positions = Float32MultiArray(data=self.main_state.desired_joint_positions.tolist())
+
+            command_msg.desired_right_gripper_pos = self.main_state.desired_right_gripper_position
+            command_msg.desired_left_gripper_pos = self.main_state.desired_left_gripper_position
 
             command_msg.estop = False
 
@@ -357,6 +363,9 @@ class MainNode(Node):
                 self.main_state.desired_left_arm_position = np.array(response.left_ee_pos.position.data)
                 self.main_state.desired_left_arm_quaternion = np.array(response.left_ee_pos.quaternion.data)
 
+                self.main_state.desired_right_gripper_position = response.right_gripper_pos
+                self.main_state.desired_left_gripper_position = response.left_gripper_pos
+
                 self._awaiting_meta_data = False
                 self._meta_data_future = None
                 self._meta_data_last_ts = now
@@ -380,6 +389,8 @@ class MainNode(Node):
         self.main_state.desired_right_arm_quaternion = np.array([])
         self.main_state.desired_left_arm_position = np.array([])
         self.main_state.desired_left_arm_quaternion = np.array([])
+        self.main_state.desired_right_gripper_position = 0.0
+        self.main_state.desired_left_gripper_position = 0.0
 
     def main_loop(self):
         if self.main_state.is_robot_stopped:

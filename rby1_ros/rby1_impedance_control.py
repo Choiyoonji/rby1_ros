@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
+from rby1_ros.gripper import Gripper
 
 logging.basicConfig(level=logging.INFO)
 
@@ -25,6 +26,9 @@ class Settings:
     initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
+
+    no_gripper : bool = False
+    no_head : bool = True
 
     T_hand_offset = np.identity(4)
     T_hand_offset[0:3, 3] = hand_offset
@@ -68,7 +72,7 @@ def robot_state_callback(robot_state: rby.RobotState_A):
 
 
 class RBY1Node(Node):
-    def __init__(self, no_head=True, no_gripper=True):
+    def __init__(self):
         super().__init__("rby1_node")
         self.get_logger().info("RBY1 Impedance Control Node Initialized")
 
@@ -84,9 +88,7 @@ class RBY1Node(Node):
             10
         )
 
-        self.no_head = no_head
-        self.no_gripper = no_gripper
-
+        self.gripper = None
         self.settings = Settings()
 
         self.connect_rby1()
@@ -176,6 +178,14 @@ class RBY1Node(Node):
         msg.is_right_following = SystemContext.rby1_state.is_right_following
         msg.is_left_following = SystemContext.rby1_state.is_left_following
 
+        if self.gripper is not None:
+            gripper_position = self.gripper.get_current()
+            if gripper_position is not None:
+                SystemContext.rby1_state.right_gripper_position = gripper_position[0]
+                SystemContext.rby1_state.left_gripper_position = gripper_position[1]
+                msg.right_gripper_pos = SystemContext.rby1_state.right_gripper_position
+                msg.left_gripper_pos = SystemContext.rby1_state.left_gripper_position
+
         self.rby1_pub.publish(msg)
 
     def control_callback(self, msg: Command):
@@ -207,6 +217,10 @@ class RBY1Node(Node):
 
             SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
+            if self.gripper is not None:
+                SystemContext.control_state.desired_right_gripper_position = msg.desired_right_gripper_pos
+                SystemContext.control_state.desired_left_gripper_position = msg.desired_left_gripper_pos
+
     def set_limits(self):
         SystemContext.rby1_state.q_limits_upper = self.dyn_robot.get_limit_q_upper(self.dyn_state)
         SystemContext.rby1_state.q_limits_lower = self.dyn_robot.get_limit_q_lower(self.dyn_state)
@@ -231,7 +245,7 @@ class RBY1Node(Node):
             exit(1)
         logging.info("Successfully connected to RB-Y1.")
 
-        servo_pattern = "^(?!head_).*" if self.no_head else ".*"
+        servo_pattern = "^(?!head_).*" if self.settings.no_head else ".*"
         if not self.robot.is_power_on(servo_pattern):
             logging.warning("Robot power is off. Turning it on...")
             if not self.robot.power_on(servo_pattern):
@@ -283,6 +297,18 @@ class RBY1Node(Node):
         time.sleep(0.5)  # Need for changing timezone
         logging.info(f"Robot System Time: {self.robot.get_system_time()}")
 
+        if self.settings.no_gripper:
+            for arm in ["left", "right"]:
+                if not self.robot.set_tool_flange_output_voltage(arm, 12):
+                    logging.error(f"Failed to supply 12V to tool flange. ({arm})")
+            time.sleep(0.5)
+            self.gripper = Gripper()
+            if not self.gripper.initialize(verbose=True):
+                exit(1)
+            self.gripper.homing()
+            self.gripper.start()
+            self.gripper.set_normalized_target(np.array([0.0, 0.0]))
+
         SystemContext.rby1_state.is_robot_connected = True
         
     def ready(self):
@@ -305,7 +331,7 @@ class RBY1Node(Node):
                     .set_minimum_time(2)
                 )
             )
-            if not self.no_head:
+            if not self.settings.no_head:
                 cbc.set_head_command(
                     rby.JointPositionCommandBuilder()
                     .set_position([0.] * len(SystemContext.robot_model.head_idx))
@@ -422,6 +448,13 @@ class RBY1Node(Node):
 
         if self.stream:
             try:
+                if self.gripper is not None:
+                    gripper_target = np.array([
+                        SystemContext.control_state.desired_right_gripper_position,
+                        SystemContext.control_state.desired_left_gripper_position
+                    ])
+                    self.gripper.set_normalized_target(gripper_target)
+
                 if SystemContext.rby1_state.is_right_following:
                     right_T = SystemContext.control_state.desired_right_ee_T
                     SystemContext.rby1_state.right_arm_locked_pose = right_T.copy()

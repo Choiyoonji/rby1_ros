@@ -12,6 +12,10 @@ from rby1_ros.meta_status import MetaStatus as MetaState
 
 
 ROT_T = R.from_euler('xyz', [0, -90, 0], degrees=True).as_matrix()
+THUMB_TIP_IDX = 5
+INDEX_TIP_IDX = 10
+MAX_TIP_DISTANCE = 0.12  # 최대 거리 (m)
+MIN_TIP_DISTANCE = 0.02  # 최소 거리 (m)
 
 class MetaNode(Node):
     def __init__(self):
@@ -57,6 +61,9 @@ class MetaNode(Node):
             data["head"] = {"pos": parsed["head_robot"]["pos"], "rotmat": _orthonormalize(parsed["head_robot"]["rotmat"])}
             data["left"] = {"pos": parsed["left_robot"]["pos"], "rotmat": _orthonormalize(parsed["left_robot"]["rotmat"] @ ROT_T), "hand": parsed['left_raw']}
             data["right"] = {"pos": parsed["right_robot"]["pos"], "rotmat": _orthonormalize(parsed["right_robot"]["rotmat"] @ ROT_T), "hand": parsed['right_raw']}
+
+            data["hand"]["left"]["pos"], data["hand"]["left"]["rotmat"] = self.receiver.update_hand(parsed['left_raw'])
+            data["hand"]["right"]["pos"], data["hand"]["right"]["rotmat"] = self.receiver.update_hand(parsed['right_raw'])
 
         return data
     
@@ -266,12 +273,20 @@ class MetaNode(Node):
                     self.meta_state.left_arm_rotation = 0.7 * self.meta_state.left_arm_rotation + 0.3 * (np.array(data["left"]["rotmat"]) + self.meta_state.left_rot_offset)
                     self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
 
+                    right_gripper_pos = (np.linalg.norm(data["hand"]["right"]["pos"][THUMB_TIP_IDX] - data["hand"]["right"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+                    left_gripper_pos = (np.linalg.norm(data["hand"]["left"]["pos"][THUMB_TIP_IDX] - data["hand"]["left"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+
+                    self.meta_state.right_hand_position = 0.7 * self.meta_state.right_hand_position + 0.3 * float(np.clip(right_gripper_pos, 0.0, 1.0))
+                    self.meta_state.left_hand_position = 0.7 * self.meta_state.left_hand_position + 0.3 * float(np.clip(left_gripper_pos, 0.0, 1.0))
+
                     response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
                     response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
                     response.right_ee_pos.position   = Float32MultiArray(data=self.meta_state.right_arm_position.tolist())
                     response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
                     response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())
                     response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
+                    response.right_gripper_pos = self.meta_state.right_hand_position
+                    response.left_gripper_pos = self.meta_state.left_hand_position
 
                 else:
                     response.error_msg = "No valid Meta data available."
@@ -282,6 +297,8 @@ class MetaNode(Node):
                         response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
                         response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())
                         response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
+                        response.right_gripper_pos = self.meta_state.right_hand_position
+                        response.left_gripper_pos = self.meta_state.left_hand_position
                         response.error_msg += " Returning last known positions."
                     else:
                         response.error_msg += " No last known positions available."
