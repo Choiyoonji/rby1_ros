@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+
 # 1) Euler → Quaternion
 def euler_to_quat(euler, seq='xyz', degrees=True):
     """

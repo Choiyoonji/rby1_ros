@@ -128,10 +128,12 @@ class MainNode(Node):
 
         T_base2head = pos_to_se3(self.main_state.desired_head_position, self.main_state.desired_head_quaternion)
         T_base2torso = pos_to_se3(self.main_state.current_torso_position, self.main_state.current_torso_quaternion)
+        T_torso2headbase = pos_to_se3([0.022, 0.0, 0.120073451525], [0.0, 0.0, 0.0, 1.0])
+        T_base2headbase = T_base2torso @ T_torso2headbase
 
-        T_torso2head = np.linalg.pinv(T_base2torso) @ T_base2head
+        T_headbase2head = np.linalg.pinv(T_base2headbase) @ T_base2head
 
-        head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_torso2head)
+        head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_headbase2head)
         head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
         self.head_pub.publish(head_cmd_msg)
 

@@ -24,6 +24,9 @@ setup(
             'rby1_control = rby1_ros.rby1_impedance_control:main',
             'main_node = rby1_ros.main_node:main',
             'tick_publisher = rby1_ros.data_tick:main',
+            'realsense_record_node = rby1_ros.realsense_data_node:main',
+            'zed_record_node = rby1_ros.zed_data_node:main',
+            'rby1_data_node = rby1_ros.rby1_data_node:main',
         ],
     },
 )

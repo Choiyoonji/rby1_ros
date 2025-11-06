@@ -1,0 +1,288 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+import os
+import sys
+import time
+import signal
+import subprocess
+from typing import Optional, List
+
+import numpy as np
+import h5py
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Bool, UInt64, String
+
+from cam_utils.shm_util import NamedSharedNDArray
+from cam_utils.zed_mp import ZED_MP
+from cam_utils.frame_saver_mp import FrameSaver_MP
+
+TS_LEN = 3
+
+class ZEDRecordNode(Node):
+    def __init__(self):
+        super().__init__("ZED_record_node")
+
+        # ---------- Parameters ----------
+        self.declare_parameter("stream", "color")
+        self.declare_parameter("width", 1280)
+        self.declare_parameter("height", 720)
+        self.declare_parameter("fps", 30)
+
+        self.declare_parameter("codec", "mp4v")
+
+        # Read params
+        self.camera_model = "ZED-Mini"
+        self.shm_name_left = "zed_left"
+        self.shm_name_right = "zed_right"
+
+        self.stream = self.get_parameter("stream").get_parameter_value().string_value
+        self.width = int(self.get_parameter("width").get_parameter_value().integer_value)
+        self.height = int(self.get_parameter("height").get_parameter_value().integer_value)
+        self.fps = int(self.get_parameter("fps").get_parameter_value().integer_value)
+
+        self.codec = self.get_parameter("codec").get_parameter_value().string_value
+
+        # ---------- ROS I/O ----------
+        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, 10)
+        self.sub_tick = self.create_subscription(UInt64, "/tick", self._on_tick, 200)
+        self.sub_path = self.create_subscription(String, "/dataset_path", self._on_data_path, 10)
+
+        # ---------- State ----------
+        self.ts_shm: Optional[NamedSharedNDArray] = None
+        self.ts_view: Optional[np.ndarray] = None
+
+        self.recording = False
+        self.session_start_mono_ns: Optional[int] = None
+        self.prev_frame_index: Optional[int] = None
+        self.dataset_path = None
+        self.h5_path: Optional[str] = None
+
+        # Buffers
+        self.buf_now_mono_ns: List[int] = []
+        self.buf_tick: List[int] = []
+        self.buf_frame_index: List[int] = []
+        self.buf_frame_index_mp4_left: List[int] = []
+        self.buf_frame_index_mp4_right: List[int] = []
+        self.buf_frame_updated_left: List[int] = []
+        self.buf_frame_updated_right: List[int] = []
+        self.buf_get_timestamp_ms: List[float] = []
+        self.buf_host_time_ns: List[float] = []
+
+        self.cam = ZED_MP(
+            shm_left="zed_left",
+            shm_right="zed_right",
+            shm_meta="zed_meta",
+            width=self.width, height=self.height, fps=self.fps,
+            serial_number=None,
+            camera_id=0,
+            verbose=True,
+        )
+
+        time.sleep(2.0) # Wait for camera to initialize
+
+        self.get_logger().info(
+            f"[init] model='{self.camera_model}',"
+            f"stream={self.stream} {self.width}x{self.height}@{self.fps}"
+        )
+
+    # ---------- Callbacks ----------
+    def _on_record(self, msg: Bool):
+        if msg.data and not self.recording:
+            while self.dataset_dir is None:
+                self.get_logger().warn("Record command received but dataset_dir is None, waiting...")
+                time.sleep(0.0001)
+            self._start_all()
+        elif (not msg.data) and self.recording:
+            self._stop_all_and_dump()
+
+    def _on_data_path(self, msg: String):
+        self.dataset_dir = msg.data
+        self.save_path_left = self.dataset_dir + f"zed_left.mp4"
+        self.save_path_right = self.dataset_dir + f"zed_right.mp4"
+        self.h5_path = self.dataset_dir + f"zed.h5"
+        self.get_logger().info(f"Received dataset path: {self.dataset_dir}")
+
+    def _on_tick(self, msg: UInt64):
+        if not self.recording:
+            return
+
+        now_mono_ns = time.monotonic_ns()
+        v = self._read_ts_vector()
+
+        def getf(i, default=np.nan):
+            try:
+                x = float(v[i])
+                if np.isnan(x):
+                    return default
+                return x
+            except Exception:
+                return default
+
+        frame_number_f = getf(0, np.nan)
+        frame_index = int(frame_number_f) if not np.isnan(frame_number_f) and frame_number_f >= 0 else -1
+        frame_index_mp4_left = self.frame_saver_left.saved_index()
+        frame_index_mp4_right = self.frame_saver_right.saved_index()
+        frame_updated_left = 1 if (self.prev_frame_index_left is None or frame_index_mp4_left > self.prev_frame_index_left) and frame_index_mp4_left >= 0 else 0
+        frame_updated_right = 1 if (self.prev_frame_index_right is None or frame_index_mp4_right > self.prev_frame_index_right) and frame_index_mp4_right >= 0 else 0
+
+        # Append
+        self.buf_now_mono_ns.append(int(now_mono_ns))
+        self.buf_tick.append(int(msg.data))
+        self.buf_frame_index.append(int(frame_index))
+        self.buf_frame_index_mp4_left.append(int(frame_index_mp4_left))
+        self.buf_frame_index_mp4_right.append(int(frame_index_mp4_right))
+        self.buf_frame_updated_left.append(int(frame_updated_left))
+        self.buf_frame_updated_right.append(int(frame_updated_right))
+
+        self.buf_get_timestamp_ms.append(getf(1))
+        self.buf_host_time_ns.append(getf(2))
+
+        if frame_index >= 0:
+            self.prev_frame_index_left = frame_index_mp4_left   
+            self.prev_frame_index_right = frame_index_mp4_right
+
+    # ---------- Helpers ----------
+    def _start_all(self):
+        # Start frame saver
+        self.frame_saver_left = FrameSaver_MP(
+            shm_name=self.shm_name_left,
+            save_path=self.save_path_left,
+            codec=self.codec,
+            fps=self.fps,
+            ready_timeout=10.0,
+            verbose=True,
+        )
+
+        self.frame_saver_right = FrameSaver_MP(
+            shm_name=self.shm_name_right,
+            save_path=self.save_path_right,
+            codec=self.codec,
+            fps=self.fps,
+            ready_timeout=10.0,
+            verbose=True,
+        )
+        # Open ts shared memory
+        ts_name = "zed_meta"
+        try:
+            try:
+                self.ts_shm = NamedSharedNDArray.open(ts_name)
+                arr = self.ts_shm.as_array()
+            except Exception:
+                self.ts_shm = NamedSharedNDArray(name=ts_name, shape=(TS_LEN,), dtype=np.float64, create=False)
+                arr = self.ts_shm.ndarray
+            self.ts_view = arr
+        except Exception as e:
+            self.get_logger().error(f"Failed to open ts shm '{ts_name}': {e}")
+            self.ts_view = None
+
+        # Reset buffers
+        self._reset_buffers()
+        self.frame_saver_left.start()
+        self.frame_saver_right.start()
+        self.session_start_mono_ns = time.monotonic_ns()
+        self.recording = True
+        self.get_logger().info("[record] START — camera + saver launched")
+
+    def _stop_all_and_dump(self):
+        self.recording = False
+        self.get_logger().info("[record] STOP — stopping saver and camera")
+
+        # Stop saver then camera
+        self.cam.stop()
+        self.frame_saver_left.stop()
+        self.frame_saver_right.stop()
+
+        # Dump HDF5
+        self._write_h5()
+
+        # Cleanup
+        self.ts_view = None
+        try:
+            if self.ts_shm is not None:
+                self.ts_shm.close()
+        except Exception:
+            pass
+        self.ts_shm = None
+        self.prev_frame_index = None
+        self.session_start_mono_ns = None
+    
+    def _write_h5(self):
+        def arr_int64(lst): return np.asarray(lst, dtype=np.int64)
+        def arr_uint64(lst): return np.asarray(lst, dtype=np.uint64)
+        def arr_int32(lst): return np.asarray(lst, dtype=np.int32)
+        def arr_uint8(lst): return np.asarray(lst, dtype=np.uint8)
+        def arr_f64(lst): return np.asarray(lst, dtype=np.float64)
+
+        os.makedirs(os.path.dirname(self.h5_path) or ".", exist_ok=True)
+        with h5py.File(self.h5_path, "w") as f:
+            f.attrs["camera_model"] = self.camera_model
+            f.attrs["shm_name_left"] = self.shm_name_left
+            f.attrs["shm_name_right"] = self.shm_name_right
+            f.attrs["session_start_mono_ns"] = int(self.session_start_mono_ns) if self.session_start_mono_ns else -1
+            f.attrs["created_wall_time_ns"] = int(time.time_ns())
+
+            g = f.create_group("samples")
+            comp = "gzip"; clevel = 4
+            def dset(name, data):
+                return g.create_dataset(name, data=data, compression=comp, compression_opts=clevel,
+                                        shuffle=True, fletcher32=True, chunks=True)
+
+            dset("now_mono_ns",          arr_int64(self.buf_now_mono_ns))
+            dset("tick",                 arr_uint64(self.buf_tick))
+            dset("frame_index",          arr_int32(self.buf_frame_index))
+            dset("frame_index_left",     arr_int32(self.buf_frame_index_mp4_left))
+            dset("frame_index_right",    arr_int32(self.buf_frame_index_mp4_right))
+            dset("frame_updated_left",   arr_uint8(self.buf_frame_updated_left))
+            dset("frame_updated_right",  arr_uint8(self.buf_frame_updated_right))
+
+            dset("zed_get_timestamp_ms",    arr_f64(self.buf_get_timestamp_ms))
+            dset("zed_host_time_ns",        arr_f64(self.buf_host_time_ns))
+
+        self.get_logger().info(f"[record] HDF5 written → '{self.h5_path}' ({len(self.buf_tick)} samples)")
+
+        # Clear buffers
+        self._reset_buffers()
+
+    def _reset_buffers(self):
+        self.buf_now_mono_ns.clear()
+        self.buf_tick.clear()
+        self.buf_frame_index.clear()
+        self.buf_frame_index_mp4_left.clear()
+        self.buf_frame_index_mp4_right.clear()
+        self.buf_frame_updated_left.clear()
+        self.buf_frame_updated_right.clear()
+        self.buf_get_timestamp_ms.clear()
+        self.buf_host_time_ns.clear()
+
+    def _read_ts_vector(self) -> np.ndarray:
+        if self.ts_view is None:
+            return np.full((TS_LEN,), np.nan, dtype=np.float64)
+        try:
+            return self.ts_view.copy()
+        except Exception:
+            return np.full((TS_LEN,), np.nan, dtype=np.float64)
+
+    # ---------- Shutdown ----------
+    def destroy_node(self):
+        if self.recording:
+            self.get_logger().warn("Shutting down while recording — stopping and saving.")
+            self._stop_all_and_dump()
+        super().destroy_node()
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = ZEDRecordNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info("KeyboardInterrupt — exit")
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()
