@@ -1,4 +1,5 @@
 import os
+import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
@@ -360,7 +361,7 @@ class RBY1Node(Node):
             self.robot.power_off(".*")
         finally:
             rclpy.shutdown()
-            os._exit(1)  # or sys.exit(1)
+            sys.exit(1)  # or sys.exit(1)
 
     def handle_signals(self):
         if SystemContext.control_state.ready:

@@ -9,6 +9,12 @@ from pathlib import Path
 class TickPublisher(Node):
     def __init__(self):
         super().__init__('tick_publisher')
+
+        self.declare_parameter("task", "default_task")
+        self.declare_parameter("base_dir", "./recordings")
+        self.task = self.get_parameter("task").get_parameter_value().string_value
+        self.base_dir = self.get_parameter("base_dir").get_parameter_value().string_value
+
         self.tick_pub = self.create_publisher(UInt64, '/tick', 10)
         self.record_sub = self.create_subscription(
             Bool, '/record', self.record_callback, 10

@@ -7,6 +7,7 @@ import time
 import signal
 import subprocess
 from typing import Optional, List
+from pathlib import Path
 
 import numpy as np
 import h5py
@@ -86,6 +87,8 @@ class RealsenseRecordNode(Node):
             serial_number=self.serial_number,
         )
 
+        self.cam.start()
+
         time.sleep(2.0) # Wait for camera to initialize
 
         self.get_logger().info(
@@ -104,9 +107,9 @@ class RealsenseRecordNode(Node):
             self._stop_all_and_dump()
 
     def _on_data_path(self, msg: String):
-        self.dataset_dir = msg.data
-        self.save_path = self.dataset_dir + f"rs_{self.camera_model}_{self.serial_number}.mp4"
-        self.h5_path = self.dataset_dir + f"rs_{self.camera_model}_{self.serial_number}.h5"
+        self.dataset_dir = Path(msg.data)
+        self.save_path = str(self.dataset_dir / f"rs_{self.camera_model}_{self.serial_number}.mp4")
+        self.h5_path = str(self.dataset_dir / f"rs_{self.camera_model}_{self.serial_number}.h5")
         self.get_logger().info(f"Received dataset path: {self.dataset_dir}")
 
     def _on_tick(self, msg: UInt64):
@@ -181,9 +184,9 @@ class RealsenseRecordNode(Node):
 
     def _stop_all_and_dump(self):
         self.recording = False
-        self.get_logger().info("[record] STOP — stopping saver and camera")
+        self.get_logger().info("[record] STOP — stopping camera and saver, dumping HDF5...")
 
-        # Stop saver then camera
+        # Stop camera then saver
         self.cam.stop()
         self.frame_saver.stop()
 

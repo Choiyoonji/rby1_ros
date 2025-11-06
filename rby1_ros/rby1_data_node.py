@@ -23,12 +23,10 @@ class RBY1DataNode(Node):
         # -------- Parameters --------
         self.declare_parameter("task", "default_task")
         self.declare_parameter("base_dir", "./recordings")
-        self.declare_parameter("h5_name", "rby1_state.h5")
         self.declare_parameter("topic_state", "/rby1/state")
 
         self.task: str = self.get_parameter("task").get_parameter_value().string_value
         self.base_dir: str = self.get_parameter("base_dir").get_parameter_value().string_value
-        self.h5_name: str = self.get_parameter("h5_name").get_parameter_value().string_value
         self.topic_state: str = self.get_parameter("topic_state").get_parameter_value().string_value
 
         # -------- ROS I/O --------
@@ -98,6 +96,11 @@ class RBY1DataNode(Node):
             self._start_session()
         elif (not msg.data) and self.recording:
             self._stop_and_flush()
+
+    def _on_data_path(self, msg: String):
+        self.dataset_dir = Path(msg.data)
+        self.save_path = str(self.dataset_dir / "rby1_state.h5")
+        self.get_logger().info(f"Received dataset path: {self.dataset_dir}")
 
     def _on_tick(self, msg: UInt64):
         if not self.recording:
