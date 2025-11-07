@@ -4,6 +4,7 @@ import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from rby1_interfaces.msg import State, Command, EEpos, FTsensor
+from rby1_ros.qos_profiles import qos_state_latest, qos_cmd
 
 import numpy as np
 from utils import *
@@ -80,13 +81,14 @@ class RBY1Node(Node):
         self.rby1_pub = self.create_publisher(
             State,
             '/rby1/state',
-            10
+            qos_state_latest
         )
+
         self.control_sub = self.create_subscription(
             Command,
             '/control/command',
             self.control_callback,
-            10
+            qos_cmd
         )
 
         self.gripper = None

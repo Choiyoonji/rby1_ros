@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-import rclpy
-from rclpy.node import Node
-from std_msgs.msg import UInt64, Bool, String
 import time
 import re
 from pathlib import Path
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import UInt64, Bool, String
+from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick
 
 class TickPublisher(Node):
     def __init__(self):
@@ -15,12 +16,12 @@ class TickPublisher(Node):
         self.task = self.get_parameter("task").get_parameter_value().string_value
         self.base_dir = self.get_parameter("base_dir").get_parameter_value().string_value
 
-        self.tick_pub = self.create_publisher(UInt64, '/tick', 10)
+        self.tick_pub = self.create_publisher(UInt64, '/tick', qos_tick)
         self.record_sub = self.create_subscription(
-            Bool, '/record', self.record_callback, 10
+            Bool, '/record', self.record_callback, qos_ctrl_latched
         )
         self.datapath_pub = self.create_publisher(
-            String, '/dataset_path', 10
+            String, '/dataset_path', qos_ctrl_latched
         )
         self.recording = False
         self.tick_count = 0

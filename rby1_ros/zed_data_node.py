@@ -14,10 +14,28 @@ import h5py
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, UInt64, String
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
 
-from cam_utils.shm_util import NamedSharedNDArray
-from cam_utils.zed_mp import ZED_MP
-from cam_utils.frame_saver_mp import FrameSaver_MP
+# 1) 제어/설정성 토픽: 마지막 값 유지(라치) + 신뢰모드
+qos_ctrl_latched = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1,
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,  # 중요: 퍼블리셔도 동일해야 과거 샘플 수신
+)
+
+# 2) tick(1kHz): 지터 흡수용 소규모 버퍼 + 신뢰모드
+qos_tick = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=10,  # 10~20 권장
+    reliability=QoSReliabilityPolicy.RELIABLE,
+    durability=QoSDurabilityPolicy.VOLATILE,
+)
+
+
+from .cam_utils.shm_util import NamedSharedNDArray
+from .cam_utils.zed_mp import ZED_MP
+from .cam_utils.frame_saver_mp import FrameSaver_MP
 
 TS_LEN = 3
 
@@ -46,9 +64,9 @@ class ZEDRecordNode(Node):
         self.codec = self.get_parameter("codec").get_parameter_value().string_value
 
         # ---------- ROS I/O ----------
-        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, 10)
-        self.sub_tick = self.create_subscription(UInt64, "/tick", self._on_tick, 200)
-        self.sub_path = self.create_subscription(String, "/dataset_path", self._on_data_path, 10)
+        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, qos_ctrl_latched)
+        self.sub_tick = self.create_subscription(UInt64, "/tick", self._on_tick, qos_tick)
+        self.sub_path = self.create_subscription(String, "/dataset_path", self._on_data_path, qos_ctrl_latched)
 
         # ---------- State ----------
         self.ts_shm: Optional[NamedSharedNDArray] = None
@@ -93,22 +111,24 @@ class ZEDRecordNode(Node):
     # ---------- Callbacks ----------
     def _on_record(self, msg: Bool):
         if msg.data and not self.recording:
-            while self.dataset_dir is None:
-                self.get_logger().warn("Record command received but dataset_dir is None, waiting...")
-                time.sleep(0.0001)
-            self._start_all()
+            self.recording = True
         elif (not msg.data) and self.recording:
             self._stop_all_and_dump()
 
     def _on_data_path(self, msg: String):
-        self.dataset_dir = Path(msg.data)
-        self.save_path_left = str(self.dataset_dir / "zed_left.mp4")
-        self.save_path_right = str(self.dataset_dir / "zed_right.mp4")
-        self.h5_path = str(self.dataset_dir / "zed.h5")
-        self.get_logger().info(f"Received dataset path: {self.dataset_dir}")
+        self.dataset_path = Path(msg.data)
+        self.save_path_left = str(self.dataset_path / "zed_left.mp4")
+        self.save_path_right = str(self.dataset_path / "zed_right.mp4")
+        self.h5_path = str(self.dataset_path / "zed.h5")
+        self.get_logger().info(f"Received dataset path: {self.dataset_path}")
+        self._start_all()
 
     def _on_tick(self, msg: UInt64):
         if not self.recording:
+            return
+
+        if self.dataset_path is None:
+            self.get_logger().warn("Tick received but dataset_path is None, skipping tick.")
             return
 
         now_mono_ns = time.monotonic_ns()

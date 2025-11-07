@@ -11,6 +11,7 @@ import h5py
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, UInt64, String
+from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick, qos_state_latest
 
 # Import the RBY1 State message
 from rby1_interfaces.msg import State as RBY1State
@@ -22,7 +23,7 @@ class RBY1DataNode(Node):
 
         # -------- Parameters --------
         self.declare_parameter("task", "default_task")
-        self.declare_parameter("base_dir", "./recordings")
+        self.declare_parameter("base_dir", "~/recordings")
         self.declare_parameter("topic_state", "/rby1/state")
 
         self.task: str = self.get_parameter("task").get_parameter_value().string_value
@@ -30,10 +31,10 @@ class RBY1DataNode(Node):
         self.topic_state: str = self.get_parameter("topic_state").get_parameter_value().string_value
 
         # -------- ROS I/O --------
-        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, 10)
-        self.sub_tick = self.create_subscription(UInt64, "/tick", self._on_tick, 200)
-        self.sub_path = self.create_subscription(String, "/dataset_path", self._on_data_path, 10)
-        self.sub_state = self.create_subscription(RBY1State, self.topic_state, self._on_state, 50)
+        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, qos_ctrl_latched)
+        self.sub_tick   = self.create_subscription(UInt64, "/tick", self._on_tick, qos_tick)
+        self.sub_path   = self.create_subscription(String, "/dataset_path", self._on_data_path, qos_ctrl_latched)
+        self.sub_state  = self.create_subscription(RBY1State, self.topic_state, self._on_state, qos_state_latest)
 
         # -------- State --------
         self.recording: bool = False
@@ -83,27 +84,29 @@ class RBY1DataNode(Node):
         self.buf_right_gripper_pos: List[float] = []
         self.buf_left_gripper_pos: List[float] = []
 
-        self.dataset_dir = None
+        self.dataset_path = None
 
         self.get_logger().info(f"[init] task='{self.task}', base='{self.base_dir}', topic_state='{self.topic_state}'")
 
     # ----------------- Callbacks -----------------
     def _on_record(self, msg: Bool):
         if msg.data and not self.recording:
-            while self.dataset_dir is None:
-                self.get_logger().warn("Record command received but dataset_dir is None, waiting...")
-                time.sleep(0.0001)
-            self._start_session()
+            self.recording = True
         elif (not msg.data) and self.recording:
             self._stop_and_flush()
 
     def _on_data_path(self, msg: String):
-        self.dataset_dir = Path(msg.data)
-        self.save_path = str(self.dataset_dir / "rby1_state.h5")
-        self.get_logger().info(f"Received dataset path: {self.dataset_dir}")
+        self.dataset_path = Path(msg.data)
+        self.save_path = str(self.dataset_path / "rby1_state.h5")
+        self.get_logger().info(f"Received dataset path: {self.dataset_path}")
+        self._start_session()
 
     def _on_tick(self, msg: UInt64):
         if not self.recording:
+            return
+        
+        if self.dataset_path is None:
+            self.get_logger().warn("Tick received but dataset_path is None, skipping tick.")
             return
 
         now_mono_ns = time.monotonic_ns()
