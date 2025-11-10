@@ -6,7 +6,6 @@ from std_msgs.msg import Float32MultiArray
 from rby1_interfaces.srv import MetaDataReq, MetaInitialReq
 from scipy.spatial.transform import Rotation as R
 from MetaQuest_HandTracking.XRHandReceiver import XRHandReceiver
-from MetaQuest_HandTracking.StereoStream.StereoStreamer import UdpImageSender
 from rby1_ros.utils import *
 from rby1_ros.meta_status import MetaStatus as MetaState
 
@@ -27,11 +26,6 @@ class MetaNode(Node):
         # ip = "192.168.0.146"
         self.receiver = XRHandReceiver(server_ip=ip)
         self.receiver.connect()
-        self.sender = UdpImageSender(ip=ip, port=9003,
-                                      width=1280, height=480,
-                                      max_payload=1024*1024, jpeg_quality=50)
-        self.sender.open()
-        self.sender.connect()
 
         self.initialize_service = self.create_service(MetaInitialReq, '/meta/set_offset', self.set_init_offset)
         self.status_service = self.create_service(MetaDataReq, '/meta/get_data', self.get_meta_status)

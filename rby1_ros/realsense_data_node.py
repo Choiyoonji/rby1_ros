@@ -30,7 +30,7 @@ class RealsenseRecordNode(Node):
         # ---------- Parameters ----------
         self.declare_parameter("shm_name", "camera_frame")
         self.declare_parameter("camera_model", "D405")
-        self.declare_parameter("serial_number", "218622278157")
+        self.declare_parameter("serial_number", "218622272411")
 
         self.declare_parameter("stream", "color")
         self.declare_parameter("width", 640)

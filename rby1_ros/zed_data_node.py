@@ -14,24 +14,7 @@ import h5py
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, UInt64, String
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, QoSHistoryPolicy, QoSReliabilityPolicy
-
-# 1) 제어/설정성 토픽: 마지막 값 유지(라치) + 신뢰모드
-qos_ctrl_latched = QoSProfile(
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=1,
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,  # 중요: 퍼블리셔도 동일해야 과거 샘플 수신
-)
-
-# 2) tick(1kHz): 지터 흡수용 소규모 버퍼 + 신뢰모드
-qos_tick = QoSProfile(
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=10,  # 10~20 권장
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.VOLATILE,
-)
-
+from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick
 
 from .cam_utils.shm_util import NamedSharedNDArray
 from .cam_utils.zed_mp import ZED_MP

@@ -27,6 +27,7 @@ setup(
             'realsense_record_node = rby1_ros.realsense_data_node:main',
             'zed_record_node = rby1_ros.zed_data_node:main',
             'rby1_data_node = rby1_ros.rby1_data_node:main',
+            'zed_img_sender = rby1_ros.zed_img_sender:main',
         ],
     },
 )
