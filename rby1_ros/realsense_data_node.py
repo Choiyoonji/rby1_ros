@@ -107,8 +107,8 @@ class RealsenseRecordNode(Node):
 
     def _on_data_path(self, msg: String):
         self.dataset_path = Path(msg.data)
-        self.save_path = str(self.dataset_path / f"rs_{self.camera_model}_{self.serial_number}.mp4")
-        self.h5_path = str(self.dataset_path / f"rs_{self.camera_model}_{self.serial_number}.h5")
+        self.save_path = str(self.dataset_path / f"rs_{self.shm_name}.mp4")
+        self.h5_path = str(self.dataset_path / f"rs_{self.shm_name}.h5")
         self.get_logger().info(f"Received dataset path: {self.dataset_path}")
         self._start_all()
 
@@ -232,6 +232,7 @@ class RealsenseRecordNode(Node):
             dset("now_mono_ns",          arr_int64(self.buf_now_mono_ns))
             dset("tick",                 arr_uint64(self.buf_tick))
             dset("frame_index",          arr_int32(self.buf_frame_index))
+            dset("frame_index_mp4",     arr_int32(self.buf_frame_index_mp4))
             dset("frame_updated",        arr_uint8(self.buf_frame_updated))
 
             dset("rs_get_timestamp_ms",    arr_f64(self.buf_get_timestamp_ms))
