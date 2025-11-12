@@ -7,14 +7,14 @@ from rclpy.node import Node
 from std_msgs.msg import Bool
 from rby1_ros.qos_profiles import qos_ctrl_latched
 
-from MetaQuest_HandTracking.StereoStream.StereoStreamer import UdpImageSender
-from cam_utils.shm_util import NamedSharedNDArray
+from rby1_ros.MetaQuest_HandTracking.StereoStream.StereoStreamer import UdpImageSender
+from rby1_ros.cam_utils.shm_util import NamedSharedNDArray
 
 import time
 import cv2
 
-SHM_NAME_LEFT = "zed_left"
-SHM_NAME_RIGHT = "zed_right"
+SHM_NAME_LEFT = "ego_left_zed"
+SHM_NAME_RIGHT = "ego_right_zed"
 
 class ZedImageSender(Node):
     def __init__(self):
@@ -27,19 +27,6 @@ class ZedImageSender(Node):
         self.sender.connect()
 
         self.shmL = self.shmR = None
-        t0 = time.time()
-
-        while time.time() - t0 < 2.0:
-            try:
-                self.shmL = NamedSharedNDArray.open(SHM_NAME_LEFT)
-                self.shmR = NamedSharedNDArray.open(SHM_NAME_RIGHT)
-                break
-            except FileNotFoundError:
-                time.sleep(0.05)
-
-        if self.shmL is None or self.shmR is None:
-            print("Shared memory segments not found. Exiting.")
-            return
 
         self.sub_record = self.create_subscription(Bool, "/record", self._on_record, qos_ctrl_latched)
 
@@ -50,6 +37,19 @@ class ZedImageSender(Node):
     def _on_record(self, msg: Bool):
         self.recording = msg.data
         if self.recording:
+            t0 = time.time()
+
+            while time.time() - t0 < 2.0:
+                try:
+                    self.shmL = NamedSharedNDArray.open(SHM_NAME_LEFT)
+                    self.shmR = NamedSharedNDArray.open(SHM_NAME_RIGHT)
+                    break
+                except FileNotFoundError:
+                    time.sleep(0.01)
+
+            if self.shmL is None or self.shmR is None:
+                print("Shared memory segments not found. Exiting.")
+                return
             print("ZED Image Sender: Recording started.")
         else:
             print("ZED Image Sender: Recording stopped.")
@@ -64,6 +64,9 @@ class ZedImageSender(Node):
         arrR = self.shmR.as_array()
 
         try:
+            if arrL is None or arrR is None:
+                self.get_logger().warning("ZED Image Sender: Failed to read from shared memory.")
+                return
             if self.recording:
                 left_frame = arrL.copy()
                 right_frame = arrR.copy()
@@ -73,7 +76,6 @@ class ZedImageSender(Node):
 
         except KeyboardInterrupt:
             print("Interrupted by user. Exiting.")
-        finally:
             for s in (self.shmL, self.shmR):
                 try:
                     if s is not None:
@@ -90,6 +92,12 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        for s in (node.shmL, node.shmR):
+            try:
+                if s is not None:
+                    s.close()
+            except Exception:
+                pass
         node.sender.close()
         node.destroy_node()
         rclpy.shutdown()
