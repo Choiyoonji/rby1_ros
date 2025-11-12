@@ -11,10 +11,16 @@ class MetaStatus:
     right_rot_offset: np.ndarray = field(default_factory=lambda: np.array([]))
     left_pos_offset: np.ndarray = field(default_factory=lambda: np.array([]))
     left_rot_offset: np.ndarray = field(default_factory=lambda: np.array([]))
+    
+    torso_anchor_position: np.ndarray = field(default_factory=lambda: np.array([]))
 
     head_position: np.ndarray = field(default_factory=lambda: np.array([]))
     head_rotation: np.ndarray = field(default_factory=lambda: np.identity(3))
     head_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
+
+    torso_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    torso_rotation: np.ndarray = field(default_factory=lambda: np.identity(3))
+    torso_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
     
     right_arm_position: np.ndarray = field(default_factory=lambda: np.array([]))
     right_arm_rotation: np.ndarray = field(default_factory=lambda: np.identity(3))

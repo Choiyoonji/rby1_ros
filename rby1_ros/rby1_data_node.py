@@ -22,12 +22,8 @@ class RBY1DataNode(Node):
         super().__init__("rby1_data_node")
 
         # -------- Parameters --------
-        self.declare_parameter("task", "default_task")
-        self.declare_parameter("base_dir", "~/recordings")
         self.declare_parameter("topic_state", "/rby1/state")
 
-        self.task: str = self.get_parameter("task").get_parameter_value().string_value
-        self.base_dir: str = self.get_parameter("base_dir").get_parameter_value().string_value
         self.topic_state: str = self.get_parameter("topic_state").get_parameter_value().string_value
 
         # -------- ROS I/O --------
@@ -86,7 +82,7 @@ class RBY1DataNode(Node):
 
         self.dataset_path = None
 
-        self.get_logger().info(f"[init] task='{self.task}', base='{self.base_dir}', topic_state='{self.topic_state}'")
+        self.get_logger().info(f"[init] RBY1 Data Node initialized, subscribing to '{self.topic_state}'")
 
     # ----------------- Callbacks -----------------
     def _on_record(self, msg: Bool):

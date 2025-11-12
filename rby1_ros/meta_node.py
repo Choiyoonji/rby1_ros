@@ -5,7 +5,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
 from rby1_interfaces.srv import MetaDataReq, MetaInitialReq
 from scipy.spatial.transform import Rotation as R
-from MetaQuest_HandTracking.XRHandReceiver import XRHandReceiver
+from rby1_ros.MetaQuest_HandTracking.XRHandReceiver import XRHandReceiver
 from rby1_ros.utils import *
 from rby1_ros.meta_status import MetaStatus as MetaState
 
@@ -15,6 +15,7 @@ THUMB_TIP_IDX = 5
 INDEX_TIP_IDX = 10
 MAX_TIP_DISTANCE = 0.12  # 최대 거리 (m)
 MIN_TIP_DISTANCE = 0.02  # 최소 거리 (m)
+TORSO_HEAD_COUPLING = 0.20 # head 움직임의 20%를 torso에 반영
 
 class MetaNode(Node):
     def __init__(self):
@@ -51,13 +52,16 @@ class MetaNode(Node):
                     U[:, -1] *= -1
                     R_ortho = U @ Vt
                 return R_ortho
+            
+            print("Meta Data Received:")
+            print(parsed["left_robot"]["rotmat"] @ ROT_T)
 
             data["head"] = {"pos": parsed["head_robot"]["pos"], "rotmat": _orthonormalize(parsed["head_robot"]["rotmat"])}
             data["left"] = {"pos": parsed["left_robot"]["pos"], "rotmat": _orthonormalize(parsed["left_robot"]["rotmat"] @ ROT_T), "hand": parsed['left_raw']}
             data["right"] = {"pos": parsed["right_robot"]["pos"], "rotmat": _orthonormalize(parsed["right_robot"]["rotmat"] @ ROT_T), "hand": parsed['right_raw']}
-
-            data["hand"]["left"]["pos"], data["hand"]["left"]["rotmat"] = self.receiver.update_hand(parsed['left_raw'])
-            data["hand"]["right"]["pos"], data["hand"]["right"]["rotmat"] = self.receiver.update_hand(parsed['right_raw'])
+            data["hand"] = {"right": {}, "left": {}}
+            _, data["hand"]["left"]["pos"], data["hand"]["left"]["rotmat"] = self.receiver.update_hand(parsed['left_raw'])
+            _, data["hand"]["right"]["pos"], data["hand"]["right"]["rotmat"] = self.receiver.update_hand(parsed['right_raw'])
 
         return data
     
@@ -255,26 +259,60 @@ class MetaNode(Node):
                     response.error_msg = ""
 
                     # Apply offsets and low pass filter
-                    self.meta_state.head_position = 0.7 * self.meta_state.head_position + 0.3 * (np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset)
-                    self.meta_state.head_rotation = 0.7 * self.meta_state.head_rotation + 0.3 * (np.array(data["head"]["rotmat"]) + self.meta_state.head_rot_offset)
-                    self.meta_state.head_quaternion = R.from_matrix(self.meta_state.head_rotation).as_quat()
+                    if self.meta_state.head_position.size == 0:
+                        # First-time initializationt
+                        self.meta_state.head_position = np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset
+                        self.meta_state.head_rotation = np.array(data["head"]["rotmat"])
+                        self.meta_state.head_quaternion = R.from_matrix(self.meta_state.head_rotation).as_quat()
+                        
+                        self.meta_state.torso_anchor_position = self.meta_state.head_position.copy()
+                        
+                        self.meta_state.torso_position = self.meta_state.torso_anchor_position
+                        self.meta_state.torso_rotation = np.array(data["head"]["rotmat"])
+                        self.meta_state.torso_quaternion = R.from_matrix(self.meta_state.torso_rotation).as_quat()
 
-                    self.meta_state.right_arm_position = 0.7 * self.meta_state.right_arm_position + 0.3 * (np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset)
-                    self.meta_state.right_arm_rotation = 0.7 * self.meta_state.right_arm_rotation + 0.3 * (np.array(data["right"]["rotmat"]) + self.meta_state.right_rot_offset)
-                    self.meta_state.right_arm_quaternion = R.from_matrix(self.meta_state.right_arm_rotation).as_quat()
+                        self.meta_state.right_arm_position = np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset
+                        self.meta_state.right_arm_rotation = np.array(data["right"]["rotmat"])
+                        self.meta_state.right_arm_quaternion = R.from_matrix(self.meta_state.right_arm_rotation).as_quat()
 
-                    self.meta_state.left_arm_position = 0.7 * self.meta_state.left_arm_position + 0.3 * (np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset)
-                    self.meta_state.left_arm_rotation = 0.7 * self.meta_state.left_arm_rotation + 0.3 * (np.array(data["left"]["rotmat"]) + self.meta_state.left_rot_offset)
-                    self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
+                        self.meta_state.left_arm_position = np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset
+                        self.meta_state.left_arm_rotation = np.array(data["left"]["rotmat"])
+                        self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
 
-                    right_gripper_pos = (np.linalg.norm(data["hand"]["right"]["pos"][THUMB_TIP_IDX] - data["hand"]["right"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
-                    left_gripper_pos = (np.linalg.norm(data["hand"]["left"]["pos"][THUMB_TIP_IDX] - data["hand"]["left"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+                        right_gripper_pos = (np.linalg.norm(data["hand"]["right"]["pos"][THUMB_TIP_IDX] - data["hand"]["right"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+                        left_gripper_pos = (np.linalg.norm(data["hand"]["left"]["pos"][THUMB_TIP_IDX] - data["hand"]["left"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
 
-                    self.meta_state.right_hand_position = 0.7 * self.meta_state.right_hand_position + 0.3 * float(np.clip(right_gripper_pos, 0.0, 1.0))
-                    self.meta_state.left_hand_position = 0.7 * self.meta_state.left_hand_position + 0.3 * float(np.clip(left_gripper_pos, 0.0, 1.0))
+                        self.meta_state.right_hand_position = float(np.clip(right_gripper_pos, 0.0, 1.0))
+                        self.meta_state.left_hand_position = float(np.clip(left_gripper_pos, 0.0, 1.0))
+                    else:
+                        # Low-pass filter update
+                        self.meta_state.head_position = 0.7 * self.meta_state.head_position + 0.3 * (np.array(data["head"]["pos"]) + self.meta_state.head_pos_offset)
+                        self.meta_state.head_rotation = 0.7 * self.meta_state.head_rotation + 0.3 * np.array(data["head"]["rotmat"])
+                        self.meta_state.head_quaternion = R.from_matrix(self.meta_state.head_rotation).as_quat()
+                        
+                        coupled_torso_target = self.meta_state.torso_anchor_position + TORSO_HEAD_COUPLING * (self.meta_state.head_position - self.meta_state.torso_anchor_position)
+                        self.meta_state.torso_position = self.meta_state.torso_position * 0.7 + 0.3 * coupled_torso_target
+                        self.meta_state.torso_rotation = 0.7 * self.meta_state.torso_rotation + 0.3 * np.array(data["head"]["rotmat"])
+                        self.meta_state.torso_quaternion = R.from_matrix(self.meta_state.torso_rotation).as_quat()
+
+                        self.meta_state.right_arm_position = 0.7 * self.meta_state.right_arm_position + 0.3 * (np.array(data["right"]["pos"]) + self.meta_state.right_pos_offset)
+                        self.meta_state.right_arm_rotation = 0.7 * self.meta_state.right_arm_rotation + 0.3 * np.array(data["right"]["rotmat"])
+                        self.meta_state.right_arm_quaternion = R.from_matrix(self.meta_state.right_arm_rotation).as_quat()
+
+                        self.meta_state.left_arm_position = 0.7 * self.meta_state.left_arm_position + 0.3 * (np.array(data["left"]["pos"]) + self.meta_state.left_pos_offset)
+                        self.meta_state.left_arm_rotation = 0.7 * self.meta_state.left_arm_rotation + 0.3 * np.array(data["left"]["rotmat"])
+                        self.meta_state.left_arm_quaternion = R.from_matrix(self.meta_state.left_arm_rotation).as_quat()
+
+                        right_gripper_pos = (np.linalg.norm(data["hand"]["right"]["pos"][THUMB_TIP_IDX] - data["hand"]["right"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+                        left_gripper_pos = (np.linalg.norm(data["hand"]["left"]["pos"][THUMB_TIP_IDX] - data["hand"]["left"]["pos"][INDEX_TIP_IDX]) - MIN_TIP_DISTANCE) / (MAX_TIP_DISTANCE - MIN_TIP_DISTANCE)
+
+                        self.meta_state.right_hand_position = 0.7 * self.meta_state.right_hand_position + 0.3 * float(np.clip(right_gripper_pos, 0.0, 1.0))
+                        self.meta_state.left_hand_position = 0.7 * self.meta_state.left_hand_position + 0.3 * float(np.clip(left_gripper_pos, 0.0, 1.0))
 
                     response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
                     response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
+                    response.torso_ee_pos.position   = Float32MultiArray(data=self.meta_state.torso_position.tolist())
+                    response.torso_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.torso_quaternion.tolist())
                     response.right_ee_pos.position   = Float32MultiArray(data=self.meta_state.right_arm_position.tolist())
                     response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
                     response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())
@@ -287,6 +325,8 @@ class MetaNode(Node):
                     if self.meta_state.head_position.size != 0:
                         response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
                         response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
+                        response.torso_ee_pos.position   = Float32MultiArray(data=self.meta_state.torso_position.tolist())
+                        response.torso_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.torso_quaternion.tolist())
                         response.right_ee_pos.position   = Float32MultiArray(data=self.meta_state.right_arm_position.tolist())
                         response.right_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.right_arm_quaternion.tolist())
                         response.left_ee_pos.position    = Float32MultiArray(data=self.meta_state.left_arm_position.tolist())

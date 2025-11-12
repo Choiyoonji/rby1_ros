@@ -7,7 +7,7 @@ from rby1_interfaces.msg import State, Command, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd
 
 import numpy as np
-from utils import *
+from rby1_ros.utils import *
 from dataclasses import dataclass, field
 from typing import Union
 import logging
@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
 
 @dataclass(frozen=True)
 class Settings:
-    dt: float = 0.05  # 20 Hz
+    dt: float = 0.1  # 10 Hz
     initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
@@ -202,10 +202,13 @@ class RBY1Node(Node):
 
         # pulse
         if msg.ready:
+            self.get_logger().info("  Ready command received.")
             SystemContext.control_state.ready = True
         if msg.stop:
+            self.get_logger().info("  Stop command received.")
             SystemContext.control_state.stop = True
         if msg.estop:
+            self.get_logger().info("  E-Stop command received.")
             SystemContext.control_state.estop = True
 
         if msg.move and msg.is_active:
@@ -387,15 +390,15 @@ class RBY1Node(Node):
         
         if self.handle_signals():
             if self.stream is not None:
+                self.get_logger().info("Stream cancelled due to signal handling.")
                 self.stream.cancel()
                 self.stream = None
-                print("Stream cancelled due to signal handling.")
 
         if SystemContext.rby1_state.is_stopped:
             if self.stream is not None:
+                self.get_logger().info("Stream cancelled due to signal handling.")
                 self.stream.cancel()
                 self.stream = None
-                print("Stream cancelled due to signal handling.")
             SystemContext.rby1_state.is_initialized = False
             return
 
@@ -404,8 +407,8 @@ class RBY1Node(Node):
 
         if self.stream is None:
             if self.robot.wait_for_control_ready(0):
-                self.stream = self.robot.create_command_stream()
                 self.get_logger().info("Starting impedance control stream...")
+                self.stream = self.robot.create_command_stream()
 
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
@@ -431,7 +434,10 @@ class RBY1Node(Node):
             if SystemContext.control_state.move:
                 SystemContext.rby1_state.is_right_following = True
                 SystemContext.rby1_state.is_left_following = True
-                SystemContext.rby1_state.is_torso_following = False
+                SystemContext.rby1_state.is_torso_following = True
+                # SystemContext.rby1_state.is_right_following = False
+                # SystemContext.rby1_state.is_left_following = False
+                # SystemContext.rby1_state.is_torso_following = False
                 if self.reset_done == False:
                     self.right_reset = True
                     self.left_reset = True
@@ -475,6 +481,8 @@ class RBY1Node(Node):
                     SystemContext.rby1_state.torso_locked_pose = torso_T.copy()
                 else:
                     torso_T = SystemContext.rby1_state.torso_locked_pose
+                    self.get_logger().info(f"Torso locked pose: {torso_T}")
+                    # print(SystemContext.control_state.desired_torso_ee_T, "desired torso pose")
 
                 if SystemContext.control_state.control_mode == "whole_body":
                     ctrl_builder = (
@@ -500,9 +508,10 @@ class RBY1Node(Node):
                                             2, np.pi * 2, 20, np.pi * 80)
 
                 elif SystemContext.control_state.control_mode == "component":
+                    self.get_logger().info("component control mode")
                     torso_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                         .set_minimum_time(Settings.dt * 1.02)
                         .set_joint_stiffness([500.] * 6)
                         .set_joint_torque_limit([600] * 6)
@@ -514,43 +523,47 @@ class RBY1Node(Node):
                         .set_joint_damping_ratio(0.7)
                         .set_reset_reference(self.torso_reset)
                     )
+                    self.get_logger().info("Torso builder created.")
                     right_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                         .set_minimum_time(Settings.dt * 1.02)
                         .set_joint_stiffness([80, 80, 80, 60, 60, 60, 60])
                         .set_joint_torque_limit([40, 40, 40, 30, 30, 30, 30])
                         .add_joint_limit("right_arm_3", -2.6, -0.5)
                         # .add_joint_limit("right_arm_5", 0.2, 1.9)
-                        .set_nullspace_joint_target(np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
+                        .set_nullspace_joint_target(np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 40.0, -15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
                         .set_stop_joint_position_tracking_error(0)
                         .set_stop_orientation_tracking_error(0)
                         .set_stop_joint_position_tracking_error(0)
                         .set_joint_damping_ratio(0.85)
                         .set_reset_reference(self.right_reset)
                     )
+                    self.get_logger().info("Right arm builder created.")
                     left_builder = (
                         rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                         .set_minimum_time(Settings.dt * 1.02)
                         .set_joint_stiffness([80, 80, 80, 60, 60, 60, 60])
                         .set_joint_torque_limit([40, 40, 40, 30, 30, 30, 30])
                         .add_joint_limit("left_arm_3", -2.6, -0.5)
                         # .add_joint_limit("left_arm_5", 0.2, 1.9)
-                        .set_nullspace_joint_target(np.deg2rad([0.0, 15.0, 0.0, -120.0, 0.0, 30.0, 15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
+                        .set_nullspace_joint_target(np.deg2rad([0.0, 15.0, 0.0, -120.0, 0.0, 40.0, 15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
                         .set_stop_joint_position_tracking_error(0)
                         .set_stop_orientation_tracking_error(0)
                         .set_stop_joint_position_tracking_error(0)
                         .set_joint_damping_ratio(0.85)
                         .set_reset_reference(self.left_reset)
                     )
+                    self.get_logger().info("Component control mode")
+                    
                     torso_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
                     right_builder.add_target("base", "link_right_arm_6",
                                                 right_T @ np.linalg.inv(self.settings.T_hand_offset),
                                                 2, np.pi * 2, 100, np.pi * 80)
                     left_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 100, np.pi * 80)
-
+                    self.get_logger().info("Targets added to builders.")
                     ctrl_builder = (
                         rby.BodyComponentBasedCommandBuilder()
                         .set_torso_command(torso_builder)
@@ -561,7 +574,7 @@ class RBY1Node(Node):
                 elif SystemContext.control_state.control_mode == "joint_position":
                     ctrl_builder = (
                         rby.JointImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
+                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                         .set_position(nd_to_list(
                             np.clip(SystemContext.control_state.desired_joint_positions,
                                     SystemContext.rby1_state.q_limits_lower,
@@ -579,6 +592,7 @@ class RBY1Node(Node):
                 self.right_reset = False
                 self.left_reset = False
 
+                self.get_logger().info("Sending impedance control command...")
                 self.stream.send_command(
                     rby.RobotCommandBuilder().set_command(
                         rby.ComponentBasedCommandBuilder()
@@ -594,18 +608,23 @@ class RBY1Node(Node):
                         )
                     )
                 )
+                self.get_logger().info("Impedance control command sent.")
                 SystemContext.rby1_state.dt -= self.settings.dt
                 SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
+                self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
 
             except Exception as e:
                 logging.error(e)
+                self.get_logger().info("Error in command stream. Cancelling stream...")
                 self.stream = None
                 # exit(1)
-
-
-if __name__ == "__main__":
+                
+def main():
     rclpy.init()
-    rby1_node = RBY1Node(no_head=True, no_gripper=True)
+    rby1_node = RBY1Node()
     rclpy.spin(rby1_node)
     rby1_node.destroy_node()
     rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()
