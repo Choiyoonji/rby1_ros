@@ -36,8 +36,9 @@ class ZEDRecordNode(Node):
 
         # Read params
         self.camera_model = "ZED-Mini"
-        self.shm_name_left = "zed_left"
-        self.shm_name_right = "zed_right"
+        self.shm_name_left = "ego_left_zed"
+        self.shm_name_right = "ego_right_zed"
+        self.shm_name_meta = "ego_zed_meta"
 
         self.stream = self.get_parameter("stream").get_parameter_value().string_value
         self.width = int(self.get_parameter("width").get_parameter_value().integer_value)
@@ -57,7 +58,8 @@ class ZEDRecordNode(Node):
 
         self.recording = False
         self.session_start_mono_ns: Optional[int] = None
-        self.prev_frame_index: Optional[int] = None
+        self.prev_frame_index_left: Optional[int] = None
+        self.prev_frame_index_right: Optional[int] = None
         self.dataset_path = None
         self.h5_path: Optional[str] = None
 
@@ -73,9 +75,9 @@ class ZEDRecordNode(Node):
         self.buf_host_time_ns: List[float] = []
 
         self.cam = ZED_MP(
-            shm_left="zed_left",
-            shm_right="zed_right",
-            shm_meta="zed_meta",
+            shm_left=self.shm_name_left,
+            shm_right=self.shm_name_right,
+            shm_meta=self.shm_name_meta,
             width=self.width, height=self.height, fps=self.fps,
             serial_number=None,
             camera_id=0,
@@ -84,7 +86,7 @@ class ZEDRecordNode(Node):
 
         self.cam.start()
 
-        time.sleep(2.0) # Wait for camera to initialize
+        time.sleep(5.0) # Wait for camera to initialize
 
         self.get_logger().info(
             f"[init] model='{self.camera_model}',"
@@ -100,9 +102,9 @@ class ZEDRecordNode(Node):
 
     def _on_data_path(self, msg: String):
         self.dataset_path = Path(msg.data)
-        self.save_path_left = str(self.dataset_path / "zed_left.mp4")
-        self.save_path_right = str(self.dataset_path / "zed_right.mp4")
-        self.h5_path = str(self.dataset_path / "zed.h5")
+        self.save_path_left = str(self.dataset_path / f"{self.shm_name_left}.mp4")
+        self.save_path_right = str(self.dataset_path / f"{self.shm_name_right}.mp4")
+        self.h5_path = str(self.dataset_path / f"{self.shm_name_meta}.h5")
         self.get_logger().info(f"Received dataset path: {self.dataset_path}")
         self._start_all()
 
@@ -170,7 +172,7 @@ class ZEDRecordNode(Node):
             verbose=True,
         )
         # Open ts shared memory
-        ts_name = "zed_meta"
+        ts_name = self.shm_name_meta
         try:
             try:
                 self.ts_shm = NamedSharedNDArray.open(ts_name)
@@ -238,8 +240,8 @@ class ZEDRecordNode(Node):
             dset("now_mono_ns",          arr_int64(self.buf_now_mono_ns))
             dset("tick",                 arr_uint64(self.buf_tick))
             dset("frame_index",          arr_int32(self.buf_frame_index))
-            dset("frame_index_left",     arr_int32(self.buf_frame_index_mp4_left))
-            dset("frame_index_right",    arr_int32(self.buf_frame_index_mp4_right))
+            dset("frame_index_mp4_left",     arr_int32(self.buf_frame_index_mp4_left))
+            dset("frame_index_mp4_right",    arr_int32(self.buf_frame_index_mp4_right))
             dset("frame_updated_left",   arr_uint8(self.buf_frame_updated_left))
             dset("frame_updated_right",  arr_uint8(self.buf_frame_updated_right))
 
