@@ -34,6 +34,9 @@ setup(
             'digit_record_node = rby1_ros.digit_data_node:main',
             'rby1_record_node = rby1_ros.rby1_data_node:main',
             'zed_img_sender = rby1_ros.zed_img_sender:main',
+            'master_arm_bridge = rby1_ros.rby1_master_bridge:main',
+            'rby1_control_only_right = rby1_ros.rby1_impedance_control_only_right:main',
+            'main_node_only_right = rby1_ros.main_node_only_right:main',
         ],
     },
 )
