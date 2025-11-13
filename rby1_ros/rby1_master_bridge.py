@@ -46,7 +46,8 @@ class MasterArmBridge(Node):
         self.ma_viscous_gain = np.array([0.02,0.02,0.02,0.02,0.01,0.01,0.002]*2)
 
         # 초기 위치로 이동
-        self.master_arm.start_control(self.master_arm_start_control_callback)
+        self.init_cnt = 200
+        self.loop_cnt = 0
         
         self.prev_q = None
         self.timer = self.create_timer(self.dt, self.loop)
@@ -54,7 +55,7 @@ class MasterArmBridge(Node):
         # 마스터암 내부 제어 루프 실행 (원본은 콜백 기반이었으나, 여기선 polling)
         # 필요 시 self.master_arm.start_control(...) 로 내부 안정화 가능
     
-    def master_arm_start_control_callback(self):
+    def master_arm_start_input_callback(self):
         right_q = np.deg2rad(READY_POS)
         left_q = np.deg2rad(READY_POS)
         ma_input = rby.upc.MasterArm.ControlInput()
@@ -70,8 +71,9 @@ class MasterArmBridge(Node):
         ma_input.target_torque[7:14] = self.ma_torque_limit[7:14]
         self.master_arm.send_control_input(ma_input)
         self.prev_q = np.concatenate([right_q, left_q])
-
-    def master_arm_control_callback(self, state: rby.upc.MasterArm.State):
+        return ma_input
+    
+    def master_arm_loop_input_callback(self, state: rby.upc.MasterArm.State):
         ma_input = rby.upc.MasterArm.ControlInput()
         
         torque = (
@@ -119,6 +121,15 @@ class MasterArmBridge(Node):
         #     dyn_model.detect_collisions_or_nearest_links(dyn_state, 1)[0].distance
         #     < 0.02
         # )
+        
+        return ma_input
+
+    def master_arm_control_callback(self, state: rby.upc.MasterArm.State):
+        if self.loop_cnt < self.init_cnt:
+            ma_input = self.master_arm_start_input_callback()
+        else:
+            ma_input = self.master_arm_loop_input_callback(state)
+        self.loop_cnt += 1
         
         return ma_input
         
