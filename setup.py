@@ -37,6 +37,7 @@ setup(
             'master_arm_bridge = rby1_ros.rby1_master_bridge:main',
             'rby1_control_only_right = rby1_ros.rby1_impedance_control_only_right:main',
             'main_node_only_right = rby1_ros.main_node_only_right:main',
+            'rby1_data_node_only_right = rby1_ros.rby1_data_node_only_right:main',
         ],
     },
 )

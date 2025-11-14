@@ -43,7 +43,7 @@ class RBY1DataNode(Node):
 
         # HDF5 path & handle
         self.dataset_dir: Optional[Path] = None
-        self.h5_path: Optional[Path] = None
+        self.save_path: Optional[Path] = None
 
         # column buffers (in-memory until stop)
         self.buf_now_mono_ns: List[int] = []
@@ -193,23 +193,22 @@ class RBY1DataNode(Node):
 
     # ----------------- Session handling -----------------
     def _start_session(self):
-        self.h5_path = self.dataset_dir / self.h5_name
         self.session_start_mono_ns = time.monotonic_ns()
         self.recording = True
         self._seen_seq_at_last_tick = self.latest_state_seq  # snapshot
-        self.get_logger().info(f"[record] START → '{self.h5_path}'")
+        self.get_logger().info(f"[record] START → '{self.save_path}'")
 
     def _stop_and_flush(self):
         self.recording = False
         try:
-            self._write_h5(self.h5_path)
-            self.get_logger().info(f"[record] STOP → wrote {len(self.buf_tick)} ticks to '{self.h5_path}'")
+            self._write_h5(Path(self.save_path))
+            self.get_logger().info(f"[record] STOP → wrote {len(self.buf_tick)} ticks to '{self.save_path}'")
         except Exception as e:
             self.get_logger().error(f"HDF5 write failed: {e}")
         finally:
             self._clear_buffers()
             self.dataset_dir = None
-            self.h5_path = None
+            self.save_path = None
             self.session_start_mono_ns = None
 
     # ----------------- HDF5 I/O -----------------
@@ -221,41 +220,80 @@ class RBY1DataNode(Node):
 
         with h5py.File(str(path), "w") as f:
             # Root attributes
-            f.attrs["task"] = self.task
-            f.attrs["base_dir"] = str(self.base_dir)
+            f.attrs["base_dir"] = str(self.dataset_dir)
             f.attrs["topic_state"] = self.topic_state
             f.attrs["session_start_mono_ns"] = int(self.session_start_mono_ns) if self.session_start_mono_ns else -1
             f.attrs["created_wall_time_ns"] = int(time.time_ns())
 
             g = f.create_group("samples")
 
-            # Scalars
-            g.create_dataset("now_mono_ns", data=np.asarray(self.buf_now_mono_ns, dtype=np.int64), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
-            g.create_dataset("tick", data=np.asarray(self.buf_tick, dtype=np.uint64), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
-            g.create_dataset("state_updated", data=np.asarray(self.buf_state_updated, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
-            g.create_dataset("state_timestamp", data=np.asarray(self.buf_state_timestamp, dtype=np.float64), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
 
-            # Helper to write vlen float32 list
-            def write_vlen(name: str, seq: List[np.ndarray]):
-                dset = g.create_dataset(name, (len(seq),), dtype=vlen_f32, compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
-                for i, arr in enumerate(seq):
-                    dset[i] = np.asarray(arr, dtype=np.float32)
+            # ---- 1) 스칼라형 데이터셋 (압축 사용) ----
+            def write_scalar(name: str, data, dtype):
+                arr = np.asarray(data, dtype=dtype)
+                g.create_dataset(
+                    name,
+                    data=arr,
+                    compression="gzip",
+                    compression_opts=4,
+                    shuffle=True,
+                    fletcher32=True,
+                    chunks=True,
+                )
 
-            # Arrays
-            write_vlen("joint_positions", self.buf_joint_positions)
-            write_vlen("joint_velocities", self.buf_joint_velocities)
-            write_vlen("joint_currents", self.buf_joint_currents)
-            write_vlen("joint_torques", self.buf_joint_torques)
+            write_scalar("now_mono_ns",      self.buf_now_mono_ns,      np.int64)
+            write_scalar("tick",             self.buf_tick,             np.uint64)
+            write_scalar("state_updated",    self.buf_state_updated,    np.uint8)
+            write_scalar("state_timestamp",  self.buf_state_timestamp,  np.float64)
 
-            write_vlen("right_ee_pos", self.buf_right_ee_pos)
-            write_vlen("right_ee_quat", self.buf_right_ee_quat)
-            write_vlen("torso_ee_pos", self.buf_torso_ee_pos)
-            write_vlen("torso_ee_quat", self.buf_torso_ee_quat)
+            # ---- 2) 고정 길이 2D 배열로 저장 (NaN padding) ----
+            def write_fixed_2d(name: str, seq: List[np.ndarray]):
+                """
+                seq: length N 리스트, 각 원소는 1D np.ndarray (길이가 서로 다를 수도 있음)
+                => (N, max_len) float32 배열로 만들고, 모자란 부분은 NaN으로 패딩.
+                """
+                if not seq:
+                    # 데이터가 전혀 없으면 굳이 dataset 안 만듦
+                    return
 
-            write_vlen("right_ft_force", self.buf_right_ft_force)
-            write_vlen("right_ft_torque", self.buf_right_ft_torque)
+                # 각 row 길이
+                lengths = [len(np.asarray(a)) for a in seq]
+                max_len = max(lengths)
 
-            write_vlen("center_of_mass", self.buf_center_of_mass)
+                # (N, max_len) 배열 만들고 NaN으로 채우기
+                arr = np.full((len(seq), max_len), np.nan, dtype=np.float32)
+                for i, a in enumerate(seq):
+                    a = np.asarray(a, dtype=np.float32).ravel()
+                    if a.size == 0:
+                        continue
+                    L = min(a.size, max_len)
+                    arr[i, :L] = a[:L]
+
+                g.create_dataset(
+                    name,
+                    data=arr,
+                    compression="gzip",
+                    compression_opts=4,
+                    shuffle=True,
+                    fletcher32=True,
+                    chunks=True,
+                )
+
+            # ---- joint / ee / ft / com 전부 고정 2D로 저장 ----
+            write_fixed_2d("joint_positions",   self.buf_joint_positions)
+            write_fixed_2d("joint_velocities",  self.buf_joint_velocities)
+            write_fixed_2d("joint_currents",    self.buf_joint_currents)
+            write_fixed_2d("joint_torques",     self.buf_joint_torques)
+
+            write_fixed_2d("right_ee_pos",      self.buf_right_ee_pos)
+            write_fixed_2d("right_ee_quat",     self.buf_right_ee_quat)
+            write_fixed_2d("torso_ee_pos",      self.buf_torso_ee_pos)
+            write_fixed_2d("torso_ee_quat",     self.buf_torso_ee_quat)
+
+            write_fixed_2d("right_ft_force",    self.buf_right_ft_force)
+            write_fixed_2d("right_ft_torque",   self.buf_right_ft_torque)
+
+            write_fixed_2d("center_of_mass",    self.buf_center_of_mass)
 
             # Flags & gripper
             g.create_dataset("is_initialized", data=np.asarray(self.buf_flags_initialized, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)

@@ -43,7 +43,7 @@ class RBY1DataNode(Node):
 
         # HDF5 path & handle
         self.dataset_dir: Optional[Path] = None
-        self.h5_path: Optional[Path] = None
+        self.save_path: Optional[Path] = None
 
         # column buffers (in-memory until stop)
         self.buf_now_mono_ns: List[int] = []
@@ -214,23 +214,22 @@ class RBY1DataNode(Node):
 
     # ----------------- Session handling -----------------
     def _start_session(self):
-        self.h5_path = self.dataset_dir / self.h5_name
         self.session_start_mono_ns = time.monotonic_ns()
         self.recording = True
         self._seen_seq_at_last_tick = self.latest_state_seq  # snapshot
-        self.get_logger().info(f"[record] START → '{self.h5_path}'")
-
+        self.get_logger().info(f"[record] START → '{self.save_path}'")
+        
     def _stop_and_flush(self):
         self.recording = False
         try:
-            self._write_h5(self.h5_path)
-            self.get_logger().info(f"[record] STOP → wrote {len(self.buf_tick)} ticks to '{self.h5_path}'")
+            self._write_h5(Path(self.save_path))
+            self.get_logger().info(f"[record] STOP → wrote {len(self.buf_tick)} ticks to '{self.save_path}'")
         except Exception as e:
             self.get_logger().error(f"HDF5 write failed: {e}")
         finally:
             self._clear_buffers()
             self.dataset_dir = None
-            self.h5_path = None
+            self.save_path = None
             self.session_start_mono_ns = None
 
     # ----------------- HDF5 I/O -----------------
@@ -242,8 +241,7 @@ class RBY1DataNode(Node):
 
         with h5py.File(str(path), "w") as f:
             # Root attributes
-            f.attrs["task"] = self.task
-            f.attrs["base_dir"] = str(self.base_dir)
+            f.attrs["base_dir"] = str(self.dataset_dir)
             f.attrs["topic_state"] = self.topic_state
             f.attrs["session_start_mono_ns"] = int(self.session_start_mono_ns) if self.session_start_mono_ns else -1
             f.attrs["created_wall_time_ns"] = int(time.time_ns())
