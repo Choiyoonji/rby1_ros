@@ -80,7 +80,7 @@ class MainNode(Node):
         )
 
         self.main_timer = self.create_timer(1/100.0, self.main_loop)
-        self.command_timer = self.create_timer(1/20.0, self.publish_command)
+        self.command_timer = self.create_timer(1/100.0, self.publish_command)
         
         self.command_img = np.zeros((480, 640, 3), dtype=np.uint8)
     
@@ -91,7 +91,7 @@ class MainNode(Node):
         self.get_logger().info(f'Received action data: {msg.data}')
         data = msg.data
         self.main_state.is_controller_initialized = True
-        self.main_state.is_controller_connected = data[0]
+        self.main_state.is_controller_connected = bool(data[0] > 0.5)
         self.main_state.desired_joint_positions = np.array(data[1:8])
         self.main_state.desired_right_gripper_position = data[8]
 
@@ -113,7 +113,10 @@ class MainNode(Node):
 
     def publish_command(self):
         if self.main_state.is_robot_connected:
+            # self.get_logger().info('Publishing command message')
             command_msg = Command()
+            
+            # print(self.main_state.is_controller_connected)
 
             command_msg.is_active = self.main_state.is_controller_connected
             command_msg.control_mode = "joint_position"
@@ -128,12 +131,10 @@ class MainNode(Node):
             command_msg.move = self.move
             command_msg.stop = self.stop
             
-            if command_msg.ready:
+            self.stop = False
+            self.ready = False
 
-                self.stop = False
-                self.ready = False
-
-                self.command_pub.publish(command_msg)
+            self.command_pub.publish(command_msg)
 
     def reset_state(self):
         self.main_state.desired_head_position = np.array([])

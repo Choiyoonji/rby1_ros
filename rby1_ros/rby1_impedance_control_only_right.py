@@ -126,7 +126,10 @@ class RBY1Node(Node):
 
     def publish_state(self):
         if not SystemContext.rby1_state.is_robot_connected:
+            self.get_logger().warning("Robot not connected yet. Cannot publish state.")
             return
+        # self.get_logger().warning("Publishing robot state.")
+        
         msg = State()
         msg.timestamp = SystemContext.rby1_state.timestamp
 
@@ -294,13 +297,21 @@ class RBY1Node(Node):
                 [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
                 [0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
             cbc = (
-                rby.ComponentBasedCommandBuilder()
-                .set_body_command(
+                rby.BodyComponentBasedCommandBuilder()
+                .set_torso_command(
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
-                    .set_position(ready_pose)
-                    .set_stiffness([400.] * 6 + [60] * 7)
-                    .set_torque_limit([500] * 6 + [30] * 7)
+                    .set_position(ready_pose[0:6])
+                    .set_stiffness([400.] * 6)
+                    .set_torque_limit([500] * 6)
+                    .set_minimum_time(2)
+                )
+                .set_right_arm_command(
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
+                    .set_position(ready_pose[6:13])
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
                     .set_minimum_time(2)
                 )
             )
@@ -312,7 +323,10 @@ class RBY1Node(Node):
                 )
             self.robot.send_command(
                 rby.RobotCommandBuilder().set_command(
-                    cbc
+                    rby.ComponentBasedCommandBuilder()
+                        .set_body_command(
+                            cbc
+                    )
                 )
             ).get()
 
@@ -320,6 +334,8 @@ class RBY1Node(Node):
         SystemContext.rby1_state.is_stopped = False
 
         SystemContext.control_state.ready = False
+        
+        self.get_logger().warning("Robot is ready.")
 
     def stop(self):
         logging.info("Stopping the robot...")
@@ -407,8 +423,8 @@ class RBY1Node(Node):
                 if SystemContext.rby1_state.is_right_following:
                     desired_positions = np.clip(
                         SystemContext.control_state.desired_joint_positions,
-                        SystemContext.rby1_state.q_limits_lower[8:15],
-                        SystemContext.rby1_state.q_limits_upper[8:15]
+                        SystemContext.rby1_state.q_limits_lower,
+                        SystemContext.rby1_state.q_limits_upper
                     )
                     SystemContext.rby1_state.right_arm_locked_angle = desired_positions.copy()
                 else:
@@ -417,13 +433,17 @@ class RBY1Node(Node):
                     
                 if desired_positions.size != 7:
                     desired_positions = SystemContext.rby1_state.joint_positions.copy()[8:15]
+                    self.get_logger().warning("Desired positions size mismatch. Using current joint positions.")
+                    
+                print("Desired Positions:", desired_positions)
+                
                 
                 right_builder = (
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(SystemContext.rby1_state.dt * 10))
                     .set_position(desired_positions)
-                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper.tolist())
-                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper.tolist()*30)
+                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper)
+                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper*30)
                     .set_damping_ratio(self.settings.damping_ratio)
                     .set_stiffness([60] * 7)
                     .set_torque_limit([30] * 7)
@@ -436,7 +456,7 @@ class RBY1Node(Node):
 
                 self.right_reset = False
 
-                self.get_logger().info("Sending impedance control command...")
+                # self.get_logger().info("Sending impedance control command...")
                 self.stream.send_command(
                     rby.RobotCommandBuilder().set_command(
                         rby.ComponentBasedCommandBuilder()
@@ -445,7 +465,7 @@ class RBY1Node(Node):
                         )
                     )
                 )
-                self.get_logger().info("Impedance control command sent.")
+                # self.get_logger().info(SystemContext.control_state.is_active)
                 if SystemContext.control_state.is_active:
                     SystemContext.rby1_state.dt -= self.settings.dt
                     SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
