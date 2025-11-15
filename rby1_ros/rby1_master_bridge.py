@@ -6,7 +6,7 @@ from std_msgs.msg import Float32MultiArray
 import numpy as np
 import os
 import rby1_sdk as rby
-from trajectory import Trajectory
+from .trajectory import Trajectory
 from pynput import keyboard
 
 READY_POS_R = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])

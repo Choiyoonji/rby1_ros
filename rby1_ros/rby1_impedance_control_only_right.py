@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
-from rby1_ros.gripper import Gripper
+from rby1_ros.gripper_only_right import Gripper
 
 logging.basicConfig(level=logging.INFO)
 
@@ -274,7 +274,7 @@ class RBY1Node(Node):
         time.sleep(0.5)  # Need for changing timezone
         logging.info(f"Robot System Time: {self.robot.get_system_time()}")
 
-        if self.settings.no_gripper:
+        if not self.settings.no_gripper:
             for arm in ["right"]:
                 if not self.robot.set_tool_flange_output_voltage(arm, 12):
                     logging.error(f"Failed to supply 12V to tool flange. ({arm})")
@@ -284,7 +284,7 @@ class RBY1Node(Node):
                 exit(1)
             self.gripper.homing()
             self.gripper.start()
-            self.gripper.set_normalized_target(np.array([0.0, 0.0]))
+            self.gripper.set_normalized_target(np.array([1.0]))
 
         SystemContext.rby1_state.is_robot_connected = True
         
@@ -435,7 +435,6 @@ class RBY1Node(Node):
                     desired_positions = SystemContext.rby1_state.joint_positions.copy()[8:15]
                     self.get_logger().warning("Desired positions size mismatch. Using current joint positions.")
                     
-                print("Desired Positions:", desired_positions)
                 
                 
                 right_builder = (
@@ -471,7 +470,7 @@ class RBY1Node(Node):
                     SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
                 else:
                     SystemContext.rby1_state.dt = self.settings.initial_dt
-                self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
+                # self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
 
             except Exception as e:
                 logging.error(e)

@@ -23,8 +23,8 @@ class MainStatus:
 
     current_joint_positions: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    current_right_gripper_position: float = 0.0
-    current_left_gripper_position: float = 0.0
+    current_right_gripper_position: float = 1.0
+    current_left_gripper_position: float = 1.0
 
     desired_torso_position: np.ndarray = field(default_factory=lambda: np.array([]))
     desired_torso_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
@@ -37,5 +37,5 @@ class MainStatus:
 
     desired_joint_positions: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    desired_right_gripper_position: float = 0.0
-    desired_left_gripper_position: float = 0.0
+    desired_right_gripper_position: float = 1.0
+    desired_left_gripper_position: float = 1.0
