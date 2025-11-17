@@ -40,6 +40,7 @@ class RBY1DataNode(Node):
         self.latest_state: Optional[RBY1State] = None
         self.latest_state_seq: int = 0          # increases on each new /rby1/state
         self._seen_seq_at_last_tick: int = 0    # seq observed at last tick
+        self.last_ts: float = -1.0               # timestamp of last recorded state
 
         # HDF5 path & handle
         self.dataset_dir: Optional[Path] = None
@@ -99,18 +100,24 @@ class RBY1DataNode(Node):
             return
 
         now_mono_ns = time.monotonic_ns()
-        # Check if state updated since last tick
-        updated = 1 if (self.latest_state_seq != self._seen_seq_at_last_tick) else 0
-        self._seen_seq_at_last_tick = self.latest_state_seq
 
         # Snapshot the latest state (may be None initially)
         st = self.latest_state
 
+        # Check if state updated since last tick
+        # updated = 1 if (self.latest_state_seq != self._seen_seq_at_last_tick) else 0
+        # self._seen_seq_at_last_tick = self.latest_state_seq
+        
+        timestamp = float(getattr(st, "timestamp", 0.0))
+
+        updated = 1 if (timestamp != self.last_ts) else 0
+        self.last_ts = timestamp
+        
         # Append scalars
         self.buf_now_mono_ns.append(int(now_mono_ns))
         self.buf_tick.append(int(msg.data))
         self.buf_state_updated.append(int(updated))
-        self.buf_state_timestamp.append(float(getattr(st, "timestamp", 0.0)) if st else np.nan)
+        self.buf_state_timestamp.append(timestamp)
 
         # Append arrays (use empty arrays if state missing)
         def as_np(arr_like, dtype=np.float32):

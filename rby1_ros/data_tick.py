@@ -26,9 +26,11 @@ class TickPublisher(Node):
         self.recording = False
         self.tick_count = 0
 
-        # 1 kHz = 0.001 s
-        self.timer = self.create_timer(0.001, self.timer_callback)
+        # 200.0 Hz = 0.005 s
+        self.timer = self.create_timer(1.0/200.0, self.timer_callback)
         self.start_time_ns = None
+        
+        self.msg = UInt64()
 
     def create_folders(self):
 
@@ -86,9 +88,8 @@ class TickPublisher(Node):
         if not self.recording:
             return
 
-        msg = UInt64()
-        msg.data = self.tick_count
-        self.tick_pub.publish(msg)
+        self.msg.data = self.tick_count
+        self.tick_pub.publish(self.msg)
         self.tick_count += 1
 
         # 디버그용 로그 (1 초마다 한 번씩만 표시)

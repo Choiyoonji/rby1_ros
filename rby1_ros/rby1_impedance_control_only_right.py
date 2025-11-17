@@ -18,9 +18,15 @@ from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
-from rby1_ros.gripper import Gripper
+from rby1_ros.gripper_only_right import Gripper
 
 logging.basicConfig(level=logging.INFO)
+
+global rby1_node, first_time
+
+rby1_node = None
+first_time = None
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -35,7 +41,8 @@ class Settings:
     T_hand_offset = np.identity(4)
     T_hand_offset[0:3, 3] = hand_offset
 
-    rby1_ip = "192.168.0.83"
+    # rby1_ip = "192.168.0.83"
+    rby1_ip = "192.168.30.1"
     port = 50051
     model = "a"
 
@@ -55,8 +62,13 @@ class SystemContext:
     control_state = ControlState()
 
 
+
 def robot_state_callback(robot_state: rby.RobotState_A):
+    global rby1_node, first_time
     SystemContext.rby1_state.timestamp = robot_state.timestamp.timestamp()
+    # SystemContext.rby1_state.timestamp = ((time.time() * 1000.0) - first_time)
+    # print(f"CPU Timestamp: {(time.time() * 1000.0):.2f} ms")
+    # print(f"Robot State Timestamp: {SystemContext.rby1_state.timestamp:.2f} ms")
 
     SystemContext.rby1_state.joint_positions = robot_state.position
     SystemContext.rby1_state.joint_velocities = robot_state.velocity
@@ -67,6 +79,9 @@ def robot_state_callback(robot_state: rby.RobotState_A):
     SystemContext.rby1_state.right_torque_sensor = robot_state.ft_sensor_right.torque
 
     SystemContext.rby1_state.center_of_mass = robot_state.center_of_mass
+
+    if rby1_node is not None:
+        rby1_node.publish_state()
 
 
 class RBY1Node(Node):
@@ -95,7 +110,7 @@ class RBY1Node(Node):
         self.stream = None
         self.torso_reset = False
         self.right_reset = False
-        self.reset_done = False
+        self.reset_done = False 
         
         self.link_idx = {
             "base": 0,
@@ -104,7 +119,7 @@ class RBY1Node(Node):
         }
 
         self.control_timer = self.create_timer(self.settings.dt, self.run)
-        self.publish_timer = self.create_timer(self.settings.update_dt, self.publish_state)
+        # self.publish_timer = self.create_timer(self.settings.update_dt, self.publish_state)
 
 
     def calc_ee_pose(self):
@@ -210,8 +225,11 @@ class RBY1Node(Node):
         return self.robot is not None
 
     def connect_rby1(self):
+        global first_time
+        first_time = time.time() * 1000.0
         address = f"{self.settings.rby1_ip}:{self.settings.port}"
         model = self.settings.model
+
 
         logging.info(f"Attempting to connect to RB-Y1... (Address: {address}, Model: {model})")
 
@@ -266,15 +284,15 @@ class RBY1Node(Node):
         self.set_limits()
 
 
-        dt, localtime_string = self.robot.get_system_time()
-        logging.info(f"Robot System Time: {dt}, {localtime_string}")
-        logging.info("# Change to TimeZone")
-        dt = dt.astimezone(ZoneInfo("Asia/Seoul"))
-        logging.info(f" -- {'SUCCESS' if self.robot.set_system_time(dt) else 'FAIL'}")
-        time.sleep(0.5)  # Need for changing timezone
-        logging.info(f"Robot System Time: {self.robot.get_system_time()}")
+        # dt, localtime_string = self.robot.get_system_time()
+        # logging.info(f"Robot System Time: {dt}, {localtime_string}")
+        # logging.info("# Change to TimeZone")
+        # dt = dt.astimezone(ZoneInfo("Asia/Seoul"))
+        # logging.info(f" -- {'SUCCESS' if self.robot.set_system_time(dt) else 'FAIL'}")
+        # time.sleep(0.5)  # Need for changing timezone
+        # logging.info(f"Robot System Time: {self.robot.get_system_time()}")
 
-        if self.settings.no_gripper:
+        if not self.settings.no_gripper:
             for arm in ["right"]:
                 if not self.robot.set_tool_flange_output_voltage(arm, 12):
                     logging.error(f"Failed to supply 12V to tool flange. ({arm})")
@@ -284,7 +302,7 @@ class RBY1Node(Node):
                 exit(1)
             self.gripper.homing()
             self.gripper.start()
-            self.gripper.set_normalized_target(np.array([0.0, 0.0]))
+            self.gripper.set_normalized_target(np.array([1.0]))
 
         SystemContext.rby1_state.is_robot_connected = True
         
@@ -435,7 +453,6 @@ class RBY1Node(Node):
                     desired_positions = SystemContext.rby1_state.joint_positions.copy()[8:15]
                     self.get_logger().warning("Desired positions size mismatch. Using current joint positions.")
                     
-                print("Desired Positions:", desired_positions)
                 
                 
                 right_builder = (
@@ -471,7 +488,7 @@ class RBY1Node(Node):
                     SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
                 else:
                     SystemContext.rby1_state.dt = self.settings.initial_dt
-                self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
+                # self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
 
             except Exception as e:
                 logging.error(e)
@@ -480,6 +497,7 @@ class RBY1Node(Node):
                 # exit(1)
                 
 def main():
+    global rby1_node
     rclpy.init()
     rby1_node = RBY1Node()
     rclpy.spin(rby1_node)

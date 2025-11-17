@@ -29,8 +29,8 @@ class RBY1Status:
     left_ee_position: np.ndarray = field(default_factory=lambda: np.array([]))
     torso_ee_position: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    right_gripper_position: float = 0.0
-    left_gripper_position: float = 0.0
+    right_gripper_position: float = 1.0
+    left_gripper_position: float = 1.0
 
     mobile_linear_velocity: np.ndarray = field(default_factory=lambda: np.array([0.0, 0.0]))
     mobile_angular_velocity: float = 0.0

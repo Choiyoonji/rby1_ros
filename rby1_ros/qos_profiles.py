@@ -18,7 +18,7 @@ qos_latched = qos_ctrl_latched
 # 2) tick(1kHz): 지터 흡수용 소규모 버퍼 + 신뢰모드
 qos_tick = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST,
-    depth=10,  # 10~20 권장
+    depth=1,  # 10~20 권장
     reliability=QoSReliabilityPolicy.RELIABLE,
     durability=QoSDurabilityPolicy.VOLATILE,
 )
@@ -34,7 +34,7 @@ qos_state_latest = QoSProfile(
 # 4) command: 주기 제어 입력
 qos_cmd = QoSProfile(
     history=QoSHistoryPolicy.KEEP_LAST,
-    depth=10,  # 5~20 권장
+    depth=1,  # 5~20 권장
     reliability=QoSReliabilityPolicy.RELIABLE,
     durability=QoSDurabilityPolicy.VOLATILE,
 )
