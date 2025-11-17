@@ -25,5 +25,5 @@ class ControlStatus:
 
     desired_joint_positions: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    desired_right_gripper_position: float = 0.0
-    desired_left_gripper_position: float = 0.0
+    desired_right_gripper_position: float = 1.0
+    desired_left_gripper_position: float = 1.0
