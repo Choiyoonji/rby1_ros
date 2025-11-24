@@ -7,6 +7,9 @@ class ControlStatus:
 
     is_controller_connected: bool = False
     is_active: bool = False
+    
+    is_button_right_pressed: bool = False
+    is_button_left_pressed: bool = False
 
     ready: bool = False
     move: bool = False

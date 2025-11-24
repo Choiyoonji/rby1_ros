@@ -12,7 +12,7 @@ def generate_launch_description():
             name='tick_publisher',
             output='screen',
             parameters=[
-                {'task': 'digit_test_1114'},
+                {'task': 'Pick_and_Place_1118'},
                 {'base_dir': home_dir}
             ]
         ),

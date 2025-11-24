@@ -36,8 +36,12 @@ setup(
             'zed_img_sender = rby1_ros.zed_img_sender:main',
             'master_arm_bridge = rby1_ros.rby1_master_bridge:main',
             'rby1_control_only_right = rby1_ros.rby1_impedance_control_only_right:main',
+            'rby1_control_joint_both = rby1_ros.rby1_impedance_control_joint_both:main',
             'main_node_only_right = rby1_ros.main_node_only_right:main',
+            'main_node_joint_both = rby1_ros.main_node_joint_both:main',
             'rby1_data_node_only_right = rby1_ros.rby1_data_node_only_right:main',
+            'rby1_data_node_joint_both = rby1_ros.rby1_data_node_joint_both:main',
+            'visualize = rby1_ros.visualize:main',
         ],
     },
 )

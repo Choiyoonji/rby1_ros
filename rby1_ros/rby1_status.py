@@ -42,6 +42,7 @@ class RBY1Status:
     torso_locked_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
     
     right_arm_locked_angle: np.ndarray = field(default_factory=lambda: np.array([]))
+    left_arm_locked_angle: np.ndarray = field(default_factory=lambda: np.array([]))
 
     # Flags
     is_initialized: bool = False

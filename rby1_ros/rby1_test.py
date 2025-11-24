@@ -41,8 +41,8 @@ class Settings:
     T_hand_offset = np.identity(4)
     T_hand_offset[0:3, 3] = hand_offset
 
-    # rby1_ip = "192.168.0.83"
     rby1_ip = "192.168.30.1"
+    # rby1_ip = "192.168.0.83"
     port = 50051
     model = "a"
 
@@ -64,7 +64,6 @@ class SystemContext:
 
 
 def robot_state_callback(robot_state: rby.RobotState_A):
-    global rby1_node, first_time
     SystemContext.rby1_state.timestamp = robot_state.timestamp.timestamp()
 
     SystemContext.rby1_state.joint_positions = robot_state.position
@@ -82,7 +81,6 @@ def robot_state_callback(robot_state: rby.RobotState_A):
 
     if rby1_node is not None:
         rby1_node.publish_state()
-
 
 class RBY1Node(Node):
     def __init__(self):
@@ -121,6 +119,7 @@ class RBY1Node(Node):
         }
 
         self.control_timer = self.create_timer(self.settings.dt, self.run)
+
 
     def calc_ee_pose(self):
         self.dyn_state.set_q(SystemContext.rby1_state.joint_positions.copy())
@@ -248,6 +247,9 @@ class RBY1Node(Node):
         return self.robot is not None
 
     def connect_rby1(self):
+        global first_time
+        first_time = time.time() * 1000.0
+        
         address = f"{self.settings.rby1_ip}:{self.settings.port}"
         model = self.settings.model
 
@@ -302,7 +304,7 @@ class RBY1Node(Node):
                                      SystemContext.robot_model.robot_joint_names)
         
         self.set_limits()
-
+        
         if not self.settings.no_gripper:
             for arm in ["left", "right"]:
                 if not self.robot.set_tool_flange_output_voltage(arm, 12):
@@ -432,12 +434,12 @@ class RBY1Node(Node):
             )
 
             if SystemContext.control_state.move:
-                # SystemContext.rby1_state.is_right_following = True
-                # SystemContext.rby1_state.is_left_following = True
-                # SystemContext.rby1_state.is_torso_following = True
-                SystemContext.rby1_state.is_right_following = False
-                SystemContext.rby1_state.is_left_following = False
-                SystemContext.rby1_state.is_torso_following = False
+                SystemContext.rby1_state.is_right_following = True
+                SystemContext.rby1_state.is_left_following = True
+                SystemContext.rby1_state.is_torso_following = True
+                # SystemContext.rby1_state.is_right_following = False
+                # SystemContext.rby1_state.is_left_following = False
+                # SystemContext.rby1_state.is_torso_following = False
                 if self.reset_done == False:
                     self.right_reset = True
                     self.left_reset = True

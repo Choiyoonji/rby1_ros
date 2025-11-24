@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
-from rby1_ros.gripper import Gripper
+from rby1_ros.gripper_only_right import Gripper
 
 logging.basicConfig(level=logging.INFO)
 
@@ -30,7 +30,7 @@ first_time = None
 
 @dataclass(frozen=True)
 class Settings:
-    dt: float = 0.1  # 10 Hz
+    dt: float = 0.01  # 100 Hz
     initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
@@ -63,9 +63,13 @@ class SystemContext:
     control_state = ControlState()
 
 
+
 def robot_state_callback(robot_state: rby.RobotState_A):
     global rby1_node, first_time
     SystemContext.rby1_state.timestamp = robot_state.timestamp.timestamp()
+    # SystemContext.rby1_state.timestamp = ((time.time() * 1000.0) - first_time)
+    # print(f"CPU Timestamp: {(time.time() * 1000.0):.2f} ms")
+    # print(f"Robot State Timestamp: {SystemContext.rby1_state.timestamp:.2f} ms")
 
     SystemContext.rby1_state.joint_positions = robot_state.position
     SystemContext.rby1_state.joint_velocities = robot_state.velocity
@@ -73,9 +77,9 @@ def robot_state_callback(robot_state: rby.RobotState_A):
     SystemContext.rby1_state.joint_torques = robot_state.torque
 
     SystemContext.rby1_state.right_force_sensor = robot_state.ft_sensor_right.force
-    SystemContext.rby1_state.left_force_sensor = robot_state.ft_sensor_left.force
-
     SystemContext.rby1_state.right_torque_sensor = robot_state.ft_sensor_right.torque
+
+    SystemContext.rby1_state.left_force_sensor = robot_state.ft_sensor_left.force
     SystemContext.rby1_state.left_torque_sensor = robot_state.ft_sensor_left.torque
 
     SystemContext.rby1_state.center_of_mass = robot_state.center_of_mass
@@ -86,7 +90,7 @@ def robot_state_callback(robot_state: rby.RobotState_A):
 
 class RBY1Node(Node):
     def __init__(self):
-        super().__init__("rby1_node")
+        super().__init__("rby1_node_joint_both")
         self.get_logger().info("RBY1 Impedance Control Node Initialized")
 
         self.rby1_pub = self.create_publisher(
@@ -111,7 +115,7 @@ class RBY1Node(Node):
         self.torso_reset = False
         self.right_reset = False
         self.left_reset = False
-        self.reset_done = False
+        self.reset_done = False 
         
         self.link_idx = {
             "base": 0,
@@ -147,7 +151,9 @@ class RBY1Node(Node):
 
     def publish_state(self):
         if not SystemContext.rby1_state.is_robot_connected:
+            self.get_logger().warning("Robot not connected yet. Cannot publish state.")
             return
+        
         msg = State()
         msg.timestamp = SystemContext.rby1_state.timestamp
 
@@ -197,7 +203,7 @@ class RBY1Node(Node):
                 SystemContext.rby1_state.left_gripper_position = gripper_position[1]
                 msg.right_gripper_pos = SystemContext.rby1_state.right_gripper_position
                 msg.left_gripper_pos = SystemContext.rby1_state.left_gripper_position
-
+                
         self.rby1_pub.publish(msg)
 
     def control_callback(self, msg: Command):
@@ -223,13 +229,8 @@ class RBY1Node(Node):
         if msg.move and msg.is_active:
             SystemContext.control_state.control_mode = msg.control_mode
 
-            SystemContext.control_state.desired_right_ee_position["position"] = np.array(msg.desired_right_ee_pos.position.data)
-            SystemContext.control_state.desired_right_ee_position["quaternion"] = np.array(msg.desired_right_ee_pos.quaternion.data)
-            SystemContext.control_state.desired_left_ee_position["position"] = np.array(msg.desired_left_ee_pos.position.data)
-            SystemContext.control_state.desired_left_ee_position["quaternion"] = np.array(msg.desired_left_ee_pos.quaternion.data)
-            SystemContext.control_state.desired_torso_ee_position["position"] = np.array(msg.desired_torso_ee_pos.position.data)
-            SystemContext.control_state.desired_torso_ee_position["quaternion"] = np.array(msg.desired_torso_ee_pos.quaternion.data)
-
+            SystemContext.control_state.is_button_right_pressed = msg.right_btn
+            SystemContext.control_state.is_button_left_pressed = msg.left_btn
             SystemContext.control_state.desired_joint_positions = np.array(msg.desired_joint_positions.data)
 
             if self.gripper is not None:
@@ -237,19 +238,22 @@ class RBY1Node(Node):
                 SystemContext.control_state.desired_left_gripper_position = msg.desired_left_gripper_pos
 
     def set_limits(self):
-        SystemContext.rby1_state.q_limits_upper = self.dyn_robot.get_limit_q_upper(self.dyn_state)
-        SystemContext.rby1_state.q_limits_lower = self.dyn_robot.get_limit_q_lower(self.dyn_state)
-        SystemContext.rby1_state.qdot_limits_upper = self.dyn_robot.get_limit_qdot_upper(self.dyn_state)
-        SystemContext.rby1_state.qddot_limits_upper = self.dyn_robot.get_limit_qddot_upper(self.dyn_state)
-        SystemContext.rby1_state.qdot_limits_upper[SystemContext.robot_model.right_arm_idx[-1]] *= 10
-        SystemContext.rby1_state.qdot_limits_upper[SystemContext.robot_model.left_arm_idx[-1]] *= 10
+        SystemContext.rby1_state.q_limits_upper = self.dyn_robot.get_limit_q_upper(self.dyn_state)[8:22]
+        SystemContext.rby1_state.q_limits_lower = self.dyn_robot.get_limit_q_lower(self.dyn_state)[8:22]
+        SystemContext.rby1_state.qdot_limits_upper = self.dyn_robot.get_limit_qdot_upper(self.dyn_state)[8:22] * 10
+        SystemContext.rby1_state.qddot_limits_upper = self.dyn_robot.get_limit_qddot_upper(self.dyn_state)[8:22]
+        
+        print(len(SystemContext.rby1_state.q_limits_lower))
 
     def is_connected(self):
         return self.robot is not None
 
     def connect_rby1(self):
+        global first_time
+        first_time = time.time() * 1000.0
         address = f"{self.settings.rby1_ip}:{self.settings.port}"
         model = self.settings.model
+
 
         logging.info(f"Attempting to connect to RB-Y1... (Address: {address}, Model: {model})")
 
@@ -327,13 +331,29 @@ class RBY1Node(Node):
                 [0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0] +
                 [0.0, 15.0, 0.0, -120.0, 0.0, 30.0, 15.0])
             cbc = (
-                rby.ComponentBasedCommandBuilder()
-                .set_body_command(
+                rby.BodyComponentBasedCommandBuilder()
+                .set_torso_command(
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
-                    .set_position(ready_pose)
-                    .set_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
-                    .set_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
+                    .set_position(ready_pose[0:6])
+                    .set_stiffness([400.] * 6)
+                    .set_torque_limit([500] * 6)
+                    .set_minimum_time(2)
+                )
+                .set_right_arm_command(
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
+                    .set_position(ready_pose[6:13])
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
+                    .set_minimum_time(2)
+                )
+                .set_left_arm_command(
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
+                    .set_position(ready_pose[13:])
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
                     .set_minimum_time(2)
                 )
             )
@@ -345,7 +365,10 @@ class RBY1Node(Node):
                 )
             self.robot.send_command(
                 rby.RobotCommandBuilder().set_command(
-                    cbc
+                    rby.ComponentBasedCommandBuilder()
+                        .set_body_command(
+                            cbc
+                    )
                 )
             ).get()
 
@@ -353,6 +376,8 @@ class RBY1Node(Node):
         SystemContext.rby1_state.is_stopped = False
 
         SystemContext.control_state.ready = False
+        
+        self.get_logger().warning("Robot is ready.")
 
     def stop(self):
         logging.info("Stopping the robot...")
@@ -412,46 +437,24 @@ class RBY1Node(Node):
 
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
-                SystemContext.rby1_state.right_arm_locked_pose = SystemContext.rby1_state.right_ee_position.copy()
-                SystemContext.rby1_state.left_arm_locked_pose = SystemContext.rby1_state.left_ee_position.copy()
-                SystemContext.rby1_state.torso_locked_pose = SystemContext.rby1_state.torso_ee_position.copy()
-
+                SystemContext.rby1_state.right_arm_locked_angle = SystemContext.rby1_state.joint_positions.copy()[8:15]
+                SystemContext.rby1_state.left_arm_locked_angle = SystemContext.rby1_state.joint_positions.copy()[15:22]
 
         if SystemContext.control_state.is_controller_connected:
-            SystemContext.control_state.desired_right_ee_T = pos_to_se3(
-                SystemContext.control_state.desired_right_ee_position["position"],
-                SystemContext.control_state.desired_right_ee_position["quaternion"]
-            )
-            SystemContext.control_state.desired_left_ee_T = pos_to_se3(
-                SystemContext.control_state.desired_left_ee_position["position"],
-                SystemContext.control_state.desired_left_ee_position["quaternion"]
-            )
-            SystemContext.control_state.desired_torso_ee_T = pos_to_se3(
-                SystemContext.control_state.desired_torso_ee_position["position"],
-                SystemContext.control_state.desired_torso_ee_position["quaternion"]
-            )
-
-            if SystemContext.control_state.move:
-                # SystemContext.rby1_state.is_right_following = True
-                # SystemContext.rby1_state.is_left_following = True
-                # SystemContext.rby1_state.is_torso_following = True
-                SystemContext.rby1_state.is_right_following = False
-                SystemContext.rby1_state.is_left_following = False
-                SystemContext.rby1_state.is_torso_following = False
+            if SystemContext.control_state.move and SystemContext.control_state.is_active:
+                SystemContext.rby1_state.is_right_following = SystemContext.control_state.is_button_right_pressed
+                SystemContext.rby1_state.is_left_following = SystemContext.control_state.is_button_left_pressed
                 if self.reset_done == False:
                     self.right_reset = True
                     self.left_reset = True
-                    self.torso_reset = True
                     self.reset_done = True
             else:
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
-                SystemContext.rby1_state.is_torso_following = False
                 self.reset_done = False
         else:
             SystemContext.rby1_state.is_right_following = False
             SystemContext.rby1_state.is_left_following = False
-            SystemContext.rby1_state.is_torso_following = False
             self.reset_done = False
 
 
@@ -460,158 +463,84 @@ class RBY1Node(Node):
                 if self.gripper is not None:
                     gripper_target = np.array([
                         SystemContext.control_state.desired_right_gripper_position,
-                        SystemContext.control_state.desired_left_gripper_position
+                        SystemContext.control_state.desired_left_gripper_position,
                     ])
                     self.gripper.set_normalized_target(gripper_target)
 
                 if SystemContext.rby1_state.is_right_following:
-                    right_T = SystemContext.control_state.desired_right_ee_T
-                    SystemContext.rby1_state.right_arm_locked_pose = right_T.copy()
+                    desired_positions_right = np.clip(
+                        SystemContext.control_state.desired_joint_positions[:7],
+                        SystemContext.rby1_state.q_limits_lower,
+                        SystemContext.rby1_state.q_limits_upper
+                    )
+                    SystemContext.rby1_state.right_arm_locked_angle = desired_positions_right.copy()
                 else:
-                    right_T = SystemContext.rby1_state.right_arm_locked_pose
-                
+                    desired_positions_right = SystemContext.rby1_state.right_arm_locked_angle
+
                 if SystemContext.rby1_state.is_left_following:
-                    left_T = SystemContext.control_state.desired_left_ee_T
-                    SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
+                    desired_positions_left = np.clip(
+                        SystemContext.control_state.desired_joint_positions[7:],
+                        SystemContext.rby1_state.q_limits_lower,
+                        SystemContext.rby1_state.q_limits_upper
+                    )
+                    SystemContext.rby1_state.left_arm_locked_angle = desired_positions_left.copy()
                 else:
-                    left_T = SystemContext.rby1_state.left_arm_locked_pose
-                
-                if SystemContext.rby1_state.is_torso_following:
-                    torso_T = SystemContext.control_state.desired_torso_ee_T
-                    SystemContext.rby1_state.torso_locked_pose = torso_T.copy()
-                else:
-                    torso_T = SystemContext.rby1_state.torso_locked_pose
-                    self.get_logger().info(f"Torso locked pose: {torso_T}")
-                    # print(SystemContext.control_state.desired_torso_ee_T, "desired torso pose")
-
-                if SystemContext.control_state.control_mode == "whole_body":
-                    ctrl_builder = (
-                        rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
-                        .set_joint_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
-                        .set_joint_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
-                        .add_joint_limit("right_arm_3", -2.6, -0.5)
-                        .add_joint_limit("right_arm_5", 0.2, 1.9)
-                        .add_joint_limit("left_arm_3", -2.6, -0.5)
-                        .add_joint_limit("left_arm_5", 0.2, 1.9)
-                        .add_joint_limit("torso_1", -0.523598776, 1.3)
-                        .add_joint_limit("torso_2", -2.617993878, -0.2)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_stop_orientation_tracking_error(0)
-                        .set_reset_reference(self.right_reset | self.left_reset | self.torso_reset)
-                    )
-                    ctrl_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
-                    ctrl_builder.add_target("base", "link_right_arm_6", right_T @ np.linalg.inv(self.settings.T_hand_offset),
-                                            2, np.pi * 2, 20, np.pi * 80)
-                    ctrl_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
-                                            2, np.pi * 2, 20, np.pi * 80)
-
-                elif SystemContext.control_state.control_mode == "component":
-                    self.get_logger().info("component control mode")
-                    torso_builder = (
-                        rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.02)
-                        .set_joint_stiffness([500.] * 6)
-                        .set_joint_torque_limit([600] * 6)
-                        .add_joint_limit("torso_1", -0.523598776, 1.3)
-                        .add_joint_limit("torso_2", -2.617993878, -0.2)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_stop_orientation_tracking_error(0)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_joint_damping_ratio(0.7)
-                        .set_reset_reference(self.torso_reset)
-                    )
-                    self.get_logger().info("Torso builder created.")
-                    right_builder = (
-                        rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.02)
-                        .set_joint_stiffness([80, 80, 80, 60, 60, 60, 60])
-                        .set_joint_torque_limit([40, 40, 40, 30, 30, 30, 30])
-                        .add_joint_limit("right_arm_3", -2.6, -0.5)
-                        # .add_joint_limit("right_arm_5", 0.2, 1.9)
-                        .set_nullspace_joint_target(np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 40.0, -15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_stop_orientation_tracking_error(0)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_joint_damping_ratio(0.85)
-                        .set_reset_reference(self.right_reset)
-                    )
-                    self.get_logger().info("Right arm builder created.")
-                    left_builder = (
-                        rby.CartesianImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_minimum_time(Settings.dt * 1.02)
-                        .set_joint_stiffness([80, 80, 80, 60, 60, 60, 60])
-                        .set_joint_torque_limit([40, 40, 40, 30, 30, 30, 30])
-                        .add_joint_limit("left_arm_3", -2.6, -0.5)
-                        # .add_joint_limit("left_arm_5", 0.2, 1.9)
-                        .set_nullspace_joint_target(np.deg2rad([0.0, 15.0, 0.0, -120.0, 0.0, 40.0, 15.0]), np.array([1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5]) * 2, 0.2, 0.3)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_stop_orientation_tracking_error(0)
-                        .set_stop_joint_position_tracking_error(0)
-                        .set_joint_damping_ratio(0.85)
-                        .set_reset_reference(self.left_reset)
-                    )
-                    self.get_logger().info("Component control mode")
+                    desired_positions_left = SystemContext.rby1_state.left_arm_locked_angle
                     
-                    torso_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
-                    right_builder.add_target("base", "link_right_arm_6",
-                                                right_T @ np.linalg.inv(self.settings.T_hand_offset),
-                                                2, np.pi * 2, 100, np.pi * 80)
-                    left_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
-                                            2, np.pi * 2, 100, np.pi * 80)
-                    self.get_logger().info("Targets added to builders.")
-                    ctrl_builder = (
-                        rby.BodyComponentBasedCommandBuilder()
-                        .set_torso_command(torso_builder)
-                        .set_right_arm_command(right_builder)
-                        .set_left_arm_command(left_builder)
-                    )
+                if desired_positions_right.size != 7 or desired_positions_left.size !=7:
+                    desired_positions_right = SystemContext.rby1_state.joint_positions.copy()[8:15]
+                    desired_positions_left = SystemContext.rby1_state.joint_positions.copy()[15:22]
+                    self.get_logger().warning("Desired positions size mismatch. Using current joint positions.")
+                    
+                
+                right_builder = (
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(SystemContext.rby1_state.dt * 10))
+                    .set_position(desired_positions_right)
+                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper)
+                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper*30)
+                    .set_damping_ratio(self.settings.damping_ratio)
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
+                    .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
+                )
+                
+                left_builder = (
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(SystemContext.rby1_state.dt * 10))
+                    .set_position(desired_positions_left)
+                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper)
+                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper*30)
+                    .set_damping_ratio(self.settings.damping_ratio)
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
+                    .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
+                )
+                ctrl_builder = (
+                    rby.BodyComponentBasedCommandBuilder()
+                    .set_right_arm_command(right_builder)
+                    .set_left_arm_command(left_builder)
+                )
 
-                elif SystemContext.control_state.control_mode == "joint_position":
-                    ctrl_builder = (
-                        rby.JointImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_position(nd_to_list(
-                            np.clip(SystemContext.control_state.desired_joint_positions,
-                                    SystemContext.rby1_state.q_limits_lower,
-                                    SystemContext.rby1_state.q_limits_upper)
-                        ))
-                        .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper.tolist()[2:22])
-                        .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper.tolist()[2:22]*30)
-                        .set_damping(self.settings.damping_ratio)
-                        .set_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
-                        .set_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
-                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
-                    )
-
-                self.torso_reset = False
                 self.right_reset = False
                 self.left_reset = False
 
-                self.get_logger().info("Sending impedance control command...")
+                # self.get_logger().info("Sending impedance control command...")
                 self.stream.send_command(
                     rby.RobotCommandBuilder().set_command(
                         rby.ComponentBasedCommandBuilder()
-                        .set_mobility_command(
-                            rby.SE2VelocityCommandBuilder()
-                            .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 100))
-                            .set_velocity(SystemContext.rby1_state.mobile_linear_velocity,
-                                            SystemContext.rby1_state.mobile_angular_velocity)
-                            .set_minimum_time(self.settings.dt * 1.01)
-                        )
                         .set_body_command(
                             ctrl_builder
                         )
                     )
                 )
-                self.get_logger().info("Impedance control command sent.")
-                SystemContext.rby1_state.dt -= self.settings.dt
-                SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
-                self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
+                # self.get_logger().info(SystemContext.control_state.is_active)
+                if SystemContext.control_state.is_active:
+                    SystemContext.rby1_state.dt -= self.settings.dt
+                    SystemContext.rby1_state.dt = max(SystemContext.rby1_state.dt, self.settings.dt)
+                else:
+                    SystemContext.rby1_state.dt = self.settings.initial_dt
+                # self.get_logger().info(f"Impedance control command sent. dt: {SystemContext.rby1_state.dt:.4f} sec")
 
             except Exception as e:
                 logging.error(e)
@@ -620,6 +549,7 @@ class RBY1Node(Node):
                 # exit(1)
                 
 def main():
+    global rby1_node
     rclpy.init()
     rby1_node = RBY1Node()
     rclpy.spin(rby1_node)

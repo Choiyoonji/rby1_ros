@@ -19,7 +19,7 @@ from rby1_interfaces.msg import State as RBY1State
 
 class RBY1DataNode(Node):
     def __init__(self):
-        super().__init__("rby1_data_node_right_only")
+        super().__init__("rby1_data_node_joint_both")
 
         # -------- Parameters --------
         self.declare_parameter("topic_state", "/rby1/state")
@@ -60,19 +60,26 @@ class RBY1DataNode(Node):
 
         self.buf_right_ee_pos: List[np.ndarray] = []      # 3
         self.buf_right_ee_quat: List[np.ndarray] = []     # 4
+        self.buf_left_ee_pos: List[np.ndarray] = []      # 3
+        self.buf_left_ee_quat: List[np.ndarray] = []     # 4
         self.buf_torso_ee_pos: List[np.ndarray] = []      # 3
         self.buf_torso_ee_quat: List[np.ndarray] = []     # 4
 
         self.buf_right_ft_force: List[np.ndarray] = []    # 3
         self.buf_right_ft_torque: List[np.ndarray] = []   # 3
 
+        self.buf_left_ft_force: List[np.ndarray] = []    # 3
+        self.buf_left_ft_torque: List[np.ndarray] = []   # 3
+        
         self.buf_center_of_mass: List[np.ndarray] = []    # 3
 
         self.buf_flags_initialized: List[int] = []
         self.buf_flags_stopped: List[int] = []
         self.buf_flags_right_follow: List[int] = []
+        self.buf_flags_left_follow: List[int] = []
 
         self.buf_right_gripper_pos: List[float] = []
+        self.buf_left_gripper_pos: List[float] = []
 
         self.dataset_path = None
 
@@ -135,19 +142,26 @@ class RBY1DataNode(Node):
 
             self.buf_right_ee_pos.append(np.asarray([], dtype=np.float32))
             self.buf_right_ee_quat.append(np.asarray([], dtype=np.float32))
+            self.buf_left_ee_pos.append(np.asarray([], dtype=np.float32))
+            self.buf_left_ee_quat.append(np.asarray([], dtype=np.float32))
             self.buf_torso_ee_pos.append(np.asarray([], dtype=np.float32))
             self.buf_torso_ee_quat.append(np.asarray([], dtype=np.float32))
 
             self.buf_right_ft_force.append(np.asarray([], dtype=np.float32))
             self.buf_right_ft_torque.append(np.asarray([], dtype=np.float32))
+            
+            self.buf_left_ft_force.append(np.asarray([], dtype=np.float32))
+            self.buf_left_ft_torque.append(np.asarray([], dtype=np.float32))
 
             self.buf_center_of_mass.append(np.asarray([], dtype=np.float32))
 
             self.buf_flags_initialized.append(0)
             self.buf_flags_stopped.append(0)
             self.buf_flags_right_follow.append(0)
+            self.buf_flags_left_follow.append(0)
 
             self.buf_right_gripper_pos.append(np.nan)
+            self.buf_left_gripper_pos.append(np.nan)
             return
 
         # For Float32MultiArray fields, take the `.data` part
@@ -169,8 +183,10 @@ class RBY1DataNode(Node):
             return as_np(pos), as_np(quat)
 
         rp, rq = pos_quat(st.right_ee_pos)
+        lp, lq = pos_quat(st.left_ee_pos)
         tp, tq = pos_quat(st.torso_ee_pos)
         self.buf_right_ee_pos.append(rp); self.buf_right_ee_quat.append(rq)
+        self.buf_left_ee_pos.append(lp); self.buf_left_ee_quat.append(lq)
         self.buf_torso_ee_pos.append(tp); self.buf_torso_ee_quat.append(tq)
 
         # FT sensors
@@ -180,7 +196,9 @@ class RBY1DataNode(Node):
             return as_np(force), as_np(torque)
 
         rff, rft = ft(st.right_ft_sensor)
+        lff, lft = ft(st.left_ft_sensor)
         self.buf_right_ft_force.append(rff); self.buf_right_ft_torque.append(rft)
+        self.buf_left_ft_force.append(lff); self.buf_left_ft_torque.append(lft)
 
         # Center of mass
         com = getattr(st.center_of_mass, "data", [])
@@ -190,10 +208,12 @@ class RBY1DataNode(Node):
         self.buf_flags_initialized.append(1 if getattr(st, "is_initialized", False) else 0)
         self.buf_flags_stopped.append(1 if getattr(st, "is_stopped", False) else 0)
         self.buf_flags_right_follow.append(1 if getattr(st, "is_right_following", False) else 0)
+        self.buf_flags_left_follow.append(1 if getattr(st, "is_left_following", False) else 0)
 
         # Gripper
         self.buf_right_gripper_pos.append(float(getattr(st, "right_gripper_pos", np.nan)))
-
+        self.buf_left_gripper_pos.append(float(getattr(st, "left_gripper_pos", np.nan)))
+        
     def _on_state(self, msg: RBY1State):
         self.latest_state = msg
         self.latest_state_seq += 1
@@ -294,11 +314,16 @@ class RBY1DataNode(Node):
 
             write_fixed_2d("right_ee_pos",      self.buf_right_ee_pos)
             write_fixed_2d("right_ee_quat",     self.buf_right_ee_quat)
+            write_fixed_2d("left_ee_pos",      self.buf_left_ee_pos)
+            write_fixed_2d("left_ee_quat",     self.buf_left_ee_quat)
             write_fixed_2d("torso_ee_pos",      self.buf_torso_ee_pos)
             write_fixed_2d("torso_ee_quat",     self.buf_torso_ee_quat)
 
             write_fixed_2d("right_ft_force",    self.buf_right_ft_force)
             write_fixed_2d("right_ft_torque",   self.buf_right_ft_torque)
+            
+            write_fixed_2d("left_ft_force",    self.buf_left_ft_force)
+            write_fixed_2d("left_ft_torque",   self.buf_left_ft_torque)
 
             write_fixed_2d("center_of_mass",    self.buf_center_of_mass)
 
@@ -306,8 +331,10 @@ class RBY1DataNode(Node):
             g.create_dataset("is_initialized", data=np.asarray(self.buf_flags_initialized, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
             g.create_dataset("is_stopped", data=np.asarray(self.buf_flags_stopped, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
             g.create_dataset("is_right_following", data=np.asarray(self.buf_flags_right_follow, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
-
+            g.create_dataset("is_left_following", data=np.asarray(self.buf_flags_left_follow, dtype=np.uint8), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
+            
             g.create_dataset("right_gripper_pos", data=np.asarray(self.buf_right_gripper_pos, dtype=np.float32), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
+            g.create_dataset("left_gripper_pos", data=np.asarray(self.buf_left_gripper_pos, dtype=np.float32), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
 
     def _clear_buffers(self):
         self.buf_now_mono_ns.clear()
@@ -322,19 +349,26 @@ class RBY1DataNode(Node):
 
         self.buf_right_ee_pos.clear()
         self.buf_right_ee_quat.clear()
+        self.buf_left_ee_pos.clear()
+        self.buf_left_ee_quat.clear()
         self.buf_torso_ee_pos.clear()
         self.buf_torso_ee_quat.clear()
 
         self.buf_right_ft_force.clear()
         self.buf_right_ft_torque.clear()
 
+        self.buf_left_ft_force.clear()
+        self.buf_left_ft_torque.clear()
+
         self.buf_center_of_mass.clear()
 
         self.buf_flags_initialized.clear()
         self.buf_flags_stopped.clear()
         self.buf_flags_right_follow.clear()
+        self.buf_flags_left_follow.clear()
 
         self.buf_right_gripper_pos.clear()
+        self.buf_left_gripper_pos.clear()
 
     # ----------------- Shutdown -----------------
     def destroy_node(self):

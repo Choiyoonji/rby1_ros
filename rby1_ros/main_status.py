@@ -12,6 +12,8 @@ class MainStatus:
     is_meta_ready: bool = False
 
     is_controller_connected: bool = False
+    is_controller_button_left: bool = False
+    is_controller_button_right: bool = False
     is_controller_initialized: bool = False
 
     current_torso_position: np.ndarray = field(default_factory=lambda: np.array([]))

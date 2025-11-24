@@ -10,7 +10,7 @@ from .trajectory import Trajectory
 from pynput import keyboard
 
 READY_POS_R = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
-READY_POS_L = np.deg2rad([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+READY_POS_L = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
 
 class MasterArmBridge(Node):
     def __init__(self):
@@ -135,6 +135,7 @@ class MasterArmBridge(Node):
 
         master_actions = Float32MultiArray()
         master_actions.data = right_actions
+        # master_actions.data = right_actions + left_actions
         self.pub_states.publish(master_actions)
 
         return ma_input
