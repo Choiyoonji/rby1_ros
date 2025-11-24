@@ -15,7 +15,7 @@ class Gripper:
         self.bus = rby.DynamixelBus(rby.upc.GripperDeviceName)
         self.bus.open_port()
         self.bus.set_baud_rate(2_000_000)
-        self.bus.set_torque_constant([1, 1])
+        self.bus.set_torque_constant([13, 13])
         self.min_q = np.array([np.inf, np.inf])
         self.max_q = np.array([-np.inf, -np.inf])
         self.target_q: np.typing.NDArray = None
@@ -51,7 +51,7 @@ class Gripper:
         counter = 0
         while direction < 2:
             self.bus.group_sync_write_send_torque(
-                [(dev_id, 0.5 * (1 if direction == 0 else -1)) for dev_id in [0, 1]]
+                [(dev_id, 5 * (1 if direction == 0 else -1)) for dev_id in [0, 1]]
             )
             rv = self.bus.group_fast_sync_read_encoder([0, 1])
             if rv is not None:
@@ -90,7 +90,19 @@ class Gripper:
                 self.bus.group_sync_write_send_position(
                     [(dev_id, q) for dev_id, q in enumerate(self.target_q.tolist())]
                 )
-            time.sleep(0.1)
+                target_torque = []
+                for dev_id, enc in self.current_q:
+                    if enc < self.target_q[dev_id]:
+                        target_torque.append(0.3)
+                    else:
+                        target_torque.append(1.0)
+                        
+                self.bus.group_sync_write_send_torque([(dev_id, tq) for dev_id, tq in enumerate(target_torque)])
+                self.bus.group_sync_write_send_position(
+                    [(dev_id, q) for dev_id, q in enumerate(self.target_q.tolist())]
+                )
+                
+            time.sleep(0.01)
 
     def get_target(self):
         return self.target_q
@@ -100,7 +112,7 @@ class Gripper:
             return None
         current_positions = np.zeros(2)
         for dev_id, enc in self.current_q:
-            current_positions[dev_id] = enc
+            current_positions[dev_id] = (enc - self.min_q[dev_id]) / (self.max_q[dev_id] - self.min_q[dev_id])
         return current_positions
     
     def get_normalized_target(self):

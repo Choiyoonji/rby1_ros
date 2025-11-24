@@ -108,7 +108,7 @@ class Gripper:
             return None
         current_positions = np.zeros(1)
         for dev_id, enc in self.current_q:
-            current_positions[dev_id] = enc
+            current_positions[dev_id] = (enc - self.min_q[dev_id]) / (self.max_q[dev_id] - self.min_q[dev_id])
         return current_positions
     
     def get_normalized_target(self):
