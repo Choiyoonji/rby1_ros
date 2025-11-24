@@ -5,33 +5,8 @@ from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
 from rby1_interfaces.msg import EEpos, FTsensor, State, Command
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
-from rclpy.qos import (
-    QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy, QoSDurabilityPolicy
-)
 
-# 1) 제어/설정: 마지막 값이 반드시 전달되어야 함 (라치드)
-qos_ctrl_latched = QoSProfile(
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=1,
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,  # 퍼블리셔가 캐시
-)
-
-# 2) 주기 신호(명령/행동): 잠깐의 지터 흡수, 최신 위주
-qos_cmd = QoSProfile(
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=10,  # 5~20 사이 권장 (너비 큰 I/O는 줄이기)
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.VOLATILE,
-)
-
-# 3) 상태: 최신값만 필요 → 깊이 1
-qos_state_latest = QoSProfile(
-    history=QoSHistoryPolicy.KEEP_LAST,
-    depth=1,
-    reliability=QoSReliabilityPolicy.RELIABLE,
-    durability=QoSDurabilityPolicy.VOLATILE,
-)
+from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
 
 import cv2
 from rby1_ros.main_status import MainStatus as MainState
