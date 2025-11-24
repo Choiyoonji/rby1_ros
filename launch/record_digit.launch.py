@@ -12,7 +12,7 @@ def generate_launch_description():
             name='tick_publisher',
             output='screen',
             parameters=[
-                {'task': 'Pick_and_Place_1118'},
+                {'task': 'both_arm_test_1124'},
                 {'base_dir': home_dir}
             ]
         ),
@@ -28,6 +28,18 @@ def generate_launch_description():
                 {'serial_number': '218622272411'}
             ]
         ),
+
+        # Node(
+        #     package='rby1_ros',
+        #     executable='realsense_record_node',
+        #     name='left_wrist_D405',
+        #     output='screen',
+        #     parameters=[
+        #         {'shm_name': 'left_wrist_D405'},
+        #         {'camera_model': 'D405'},
+        #         {'serial_number': '218622278157'}
+        #     ]
+        # ),
 
         Node(
             package='rby1_ros',
