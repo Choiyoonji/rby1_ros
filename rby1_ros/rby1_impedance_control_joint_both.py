@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 from rby1_ros.rby1_status import RBY1Status as RBY1State
 from rby1_ros.control_status import ControlStatus as ControlState
-from rby1_ros.gripper_only_right import Gripper
+from rby1_ros.gripper import Gripper
 
 logging.basicConfig(level=logging.INFO)
 
