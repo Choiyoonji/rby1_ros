@@ -40,7 +40,7 @@ from rby1_ros.utils import *
 
 class MainNode(Node):
     def __init__(self):
-        super().__init__('main_node_only_right')
+        super().__init__('main_node_joint_both')
 
         self.ready: bool = False
         self.move: bool = False
