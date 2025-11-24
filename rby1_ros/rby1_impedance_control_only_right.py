@@ -30,7 +30,7 @@ first_time = None
 
 @dataclass(frozen=True)
 class Settings:
-    dt: float = 0.01  # 100 Hz
+    dt: float = 1/30.0  # 30 Hz
     initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
@@ -299,6 +299,7 @@ class RBY1Node(Node):
             time.sleep(0.5)
             self.gripper = Gripper()
             if not self.gripper.initialize(verbose=True):
+                logging.critical("Failed to initialize gripper. Exiting program.")
                 exit(1)
             self.gripper.homing()
             self.gripper.start()

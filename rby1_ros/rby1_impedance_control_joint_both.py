@@ -314,6 +314,7 @@ class RBY1Node(Node):
             time.sleep(0.5)
             self.gripper = Gripper()
             if not self.gripper.initialize(verbose=True):
+                logging.critical("Failed to initialize gripper. Exiting program.")
                 exit(1)
             self.gripper.homing()
             self.gripper.start()
@@ -470,8 +471,8 @@ class RBY1Node(Node):
                 if SystemContext.rby1_state.is_right_following:
                     desired_positions_right = np.clip(
                         SystemContext.control_state.desired_joint_positions[:7],
-                        SystemContext.rby1_state.q_limits_lower,
-                        SystemContext.rby1_state.q_limits_upper
+                        SystemContext.rby1_state.q_limits_lower[:7],
+                        SystemContext.rby1_state.q_limits_upper[:7]
                     )
                     SystemContext.rby1_state.right_arm_locked_angle = desired_positions_right.copy()
                 else:
@@ -480,8 +481,8 @@ class RBY1Node(Node):
                 if SystemContext.rby1_state.is_left_following:
                     desired_positions_left = np.clip(
                         SystemContext.control_state.desired_joint_positions[7:],
-                        SystemContext.rby1_state.q_limits_lower,
-                        SystemContext.rby1_state.q_limits_upper
+                        SystemContext.rby1_state.q_limits_lower[7:],
+                        SystemContext.rby1_state.q_limits_upper[7:]
                     )
                     SystemContext.rby1_state.left_arm_locked_angle = desired_positions_left.copy()
                 else:
@@ -491,14 +492,17 @@ class RBY1Node(Node):
                     desired_positions_right = SystemContext.rby1_state.joint_positions.copy()[8:15]
                     desired_positions_left = SystemContext.rby1_state.joint_positions.copy()[15:22]
                     self.get_logger().warning("Desired positions size mismatch. Using current joint positions.")
+
+                print(f"Desired Right Positions: {desired_positions_right}")
+                print(f"Desired Left Positions: {desired_positions_left}")
                     
                 
                 right_builder = (
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(SystemContext.rby1_state.dt * 10))
                     .set_position(desired_positions_right)
-                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper)
-                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper*30)
+                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper[:7])
+                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper[:7]*30)
                     .set_damping_ratio(self.settings.damping_ratio)
                     .set_stiffness([60] * 7)
                     .set_torque_limit([30] * 7)
@@ -509,8 +513,8 @@ class RBY1Node(Node):
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(SystemContext.rby1_state.dt * 10))
                     .set_position(desired_positions_left)
-                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper)
-                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper*30)
+                    .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper[7:])
+                    .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper[7:]*30)
                     .set_damping_ratio(self.settings.damping_ratio)
                     .set_stiffness([60] * 7)
                     .set_torque_limit([30] * 7)
