@@ -37,7 +37,7 @@ class MainNode(Node):
         # ----- 파라미터 (IP/PORT/TASK) -----
         self.declare_parameter("server_ip", "127.0.0.1")
         self.declare_parameter("server_port", 12345)
-        self.declare_parameter("task", "default task")  # 필요하면 바꾸기
+        self.declare_parameter("task", "Pick up the eclipse case")  # 필요하면 바꾸기
 
         self.server_ip = self.get_parameter("server_ip").get_parameter_value().string_value
         self.server_port = self.get_parameter("server_port").get_parameter_value().integer_value
@@ -99,6 +99,13 @@ class MainNode(Node):
         self.get_logger().info("Camera processes started.")
         
         self.shm1, self.shm2 = self.open_all_shm()
+        
+        self.connect()
+        
+        if self.connected:
+            self.get_logger().info("Connected to policy server.")
+        else:
+            self.get_logger().warn("Failed to connect to policy server.")
         
         self.step_hz = 30.0
         self.step_timer = self.create_timer(1/self.step_hz, self.inference_step)
@@ -198,8 +205,7 @@ class MainNode(Node):
         if not self.connected:
             return None
         try:
-            send_packet(self.sock, state_dict)
-            action = send_packet(self.sock, None)  # 응답 받기
+            action = send_packet(self.sock, state_dict)  # 상태 전송 및 응답 받기
             return action[:self.action_len]
         except Exception as e:
             self.get_logger().error(f"Error during TCP communication: {e}")
@@ -315,7 +321,7 @@ class MainNode(Node):
             rclpy.shutdown()
         
         # state가 아직 없음
-        if self.main_state.is_robot_connected is None:
+        if self.main_state.is_robot_connected is False:
             return
         
         if self.ready or self.stop:
@@ -350,7 +356,7 @@ class MainNode(Node):
                     "image": img_exo,
                     "wrist_image": img_wri1,
                     "state": robot_state,
-                    "task": self.prompt,
+                    "prompt": self.prompt,
                 }
                 
                 action_seq = self.get_action_from_server(input_payload)
@@ -368,7 +374,7 @@ class MainNode(Node):
             action = self.action_plan.popleft()
             print("Action:", action)
             
-            if not isinstance(action, (list, tuple, np.ndarray)) or len(action) < 8:
+            if not isinstance(action, (list, tuple, np.ndarray)) or len(action) != 8:
                 print("⚠️ Invalid action format received. Skipping this step.")
                 return
             
@@ -377,8 +383,8 @@ class MainNode(Node):
                     "mode": "joint_position",
                     "arm": "right",
                     "right_arm_angle": np.array(action[:7]),
-                    "left_arm_angle": self.main_state.current_joint_positions[7:],
-                    "right_gripper": action[7],
+                    "left_arm_angle": self.main_state.current_joint_positions[15:22],
+                    "right_gripper": float(1.0),
                     "left_gripper": self.main_state.current_left_gripper_position,
                 }
                 self.publish_command(command_data)
