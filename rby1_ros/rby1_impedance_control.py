@@ -310,6 +310,7 @@ class RBY1Node(Node):
             time.sleep(0.5)
             self.gripper = Gripper()
             if not self.gripper.initialize(verbose=True):
+                logging.critical("Failed to initialize gripper. Exiting program.")
                 exit(1)
             self.gripper.homing()
             self.gripper.start()
@@ -402,8 +403,12 @@ class RBY1Node(Node):
             SystemContext.rby1_state.is_initialized = False
             return
 
-        # if not SystemContext.control_state.is_active:
-        #     return
+        if not SystemContext.control_state.is_active:
+            if self.stream is not None:
+                self.get_logger().info("Stream cancelled due to signal handling.")
+                self.stream.cancel()
+                self.stream = None
+            return
 
         if self.stream is None:
             if self.robot.wait_for_control_ready(0):
@@ -412,6 +417,7 @@ class RBY1Node(Node):
 
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
+                SystemContext.rby1_state.is_torso_following = False
                 SystemContext.rby1_state.right_arm_locked_pose = SystemContext.rby1_state.right_ee_position.copy()
                 SystemContext.rby1_state.left_arm_locked_pose = SystemContext.rby1_state.left_ee_position.copy()
                 SystemContext.rby1_state.torso_locked_pose = SystemContext.rby1_state.torso_ee_position.copy()
@@ -571,22 +577,22 @@ class RBY1Node(Node):
                         .set_left_arm_command(left_builder)
                     )
 
-                elif SystemContext.control_state.control_mode == "joint_position":
-                    ctrl_builder = (
-                        rby.JointImpedanceControlCommandBuilder()
-                        .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
-                        .set_position(nd_to_list(
-                            np.clip(SystemContext.control_state.desired_joint_positions,
-                                    SystemContext.rby1_state.q_limits_lower,
-                                    SystemContext.rby1_state.q_limits_upper)
-                        ))
-                        .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper.tolist()[2:22])
-                        .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper.tolist()[2:22]*30)
-                        .set_damping(self.settings.damping_ratio)
-                        .set_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
-                        .set_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
-                        .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
-                    )
+                # elif SystemContext.control_state.control_mode == "joint_position":
+                #     ctrl_builder = (
+                #         rby.JointImpedanceControlCommandBuilder()
+                #         .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
+                #         .set_position(nd_to_list(
+                #             np.clip(SystemContext.control_state.desired_joint_positions,
+                #                     SystemContext.rby1_state.q_limits_lower,
+                #                     SystemContext.rby1_state.q_limits_upper)
+                #         ))
+                #         .set_velocity_limit(SystemContext.rby1_state.qdot_limits_upper.tolist()[2:22])
+                #         .set_acceleration_limit(SystemContext.rby1_state.qddot_limits_upper.tolist()[2:22]*30)
+                #         .set_damping(self.settings.damping_ratio)
+                #         .set_stiffness([400.] * 6 + [60] * 7 + [60] * 7)
+                #         .set_torque_limit([500] * 6 + [30] * 7 + [30] * 7)
+                #         .set_minimum_time(SystemContext.rby1_state.dt * 1.01)
+                #     )
 
                 self.torso_reset = False
                 self.right_reset = False
