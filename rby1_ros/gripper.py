@@ -24,6 +24,7 @@ class Gripper:
         self._thread = None
 
     def initialize(self, verbose=False):
+        print("[Gripper] Initializing gripper...")
         rv = True
         for dev_id in [0, 1]:
             if not self.bus.ping(dev_id):

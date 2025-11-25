@@ -50,7 +50,8 @@ class MasterArmBridge(Node):
         self.init_cnt = 300
         self.loop_cnt = 0
 
-        self.init_traj = Trajectory(0, self.init_cnt * self.dt)
+        self.init_traj_R = Trajectory(0, self.init_cnt * self.dt)
+        self.init_traj_L = Trajectory(0, self.init_cnt * self.dt)
         
         self.prev_q = None 
         self.right_q = READY_POS_R.copy()
@@ -62,16 +63,23 @@ class MasterArmBridge(Node):
     
 
     def master_arm_start_input_callback(self, state: rby.upc.MasterArm.State):
-        self.init_traj.get_coeff_qpos(state.q_joint[:7], np.zeros_like(READY_POS_R), READY_POS_R)
+        self.init_traj_R.get_coeff_qpos(state.q_joint[:7], np.zeros_like(READY_POS_R), READY_POS_R)
+        self.init_traj_L.get_coeff_qpos(state.q_joint[7:14], np.zeros_like(READY_POS_L), READY_POS_L)
 
-        q, qv, qa = self.init_traj.calculate_pva_qpos(self.loop_cnt * self.dt)
+        q_R, qv_R, qa_R = self.init_traj_R.calculate_pva_qpos(self.loop_cnt * self.dt)
         ma_input = rby.upc.MasterArm.ControlInput()
         ma_input.target_operating_mode[0:7].fill(
             rby.DynamixelBus.CurrentBasedPositionControlMode
         )
-        ma_input.target_position[0:7] = q
+        ma_input.target_position[0:7] = q_R
         ma_input.target_torque[0:7] = self.ma_torque_limit[0:7] * 4.0
 
+        q_L, qv_L, qa_L = self.init_traj_L.calculate_pva_qpos(self.loop_cnt * self.dt)
+        ma_input.target_operating_mode[7:14].fill(
+            rby.DynamixelBus.CurrentBasedPositionControlMode
+        )
+        ma_input.target_position[7:14] = q_L
+        ma_input.target_torque[7:14] = self.ma_torque_limit[7:14] * 4.0
         return ma_input
     
     def master_arm_loop_input_callback(self, state: rby.upc.MasterArm.State):
@@ -134,8 +142,8 @@ class MasterArmBridge(Node):
         left_actions  = [left_btn] + left_joint.tolist() + [left_trg]
 
         master_actions = Float32MultiArray()
-        master_actions.data = right_actions
-        # master_actions.data = right_actions + left_actions
+        # master_actions.data = right_actions
+        master_actions.data = right_actions + left_actions
         self.pub_states.publish(master_actions)
 
         return ma_input
