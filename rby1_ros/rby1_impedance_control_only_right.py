@@ -312,8 +312,10 @@ class RBY1Node(Node):
             
         if self.robot.wait_for_control_ready(1000):
             ready_pose = np.deg2rad(
-                [0.0, 45.0, -90.0, 45.0, 0.0, 0.0] +
-                [0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
+                [0.0, 40.0, -80.0, 40.0, 0.0, 0.0] +
+                [0.0, -15.0, 0.0, -120.0, 0.0, 30.0, 75.0] +
+                [0.0, 15.0, 0.0, -120.0, 0.0, 30.0, -75.0])
+            
             cbc = (
                 rby.BodyComponentBasedCommandBuilder()
                 .set_torso_command(
@@ -328,6 +330,14 @@ class RBY1Node(Node):
                     rby.JointImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
                     .set_position(ready_pose[6:13])
+                    .set_stiffness([60] * 7)
+                    .set_torque_limit([30] * 7)
+                    .set_minimum_time(2)
+                )
+                .set_left_arm_command(
+                    rby.JointImpedanceControlCommandBuilder()
+                    .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(1))
+                    .set_position(ready_pose[13:20])
                     .set_stiffness([60] * 7)
                     .set_torque_limit([30] * 7)
                     .set_minimum_time(2)

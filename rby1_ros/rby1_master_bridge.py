@@ -9,8 +9,8 @@ import rby1_sdk as rby
 from .trajectory import Trajectory
 from pynput import keyboard
 
-READY_POS_R = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
-READY_POS_L = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, -15.0])
+READY_POS_R = np.deg2rad([0.0, -15.0, 0.0, -120.0, 0.0, 30.0, 75.0])
+READY_POS_L = np.deg2rad([0.0, 15.0, 0.0, -120.0, 0.0, 30.0, -75.0])
 
 class MasterArmBridge(Node):
     def __init__(self):
