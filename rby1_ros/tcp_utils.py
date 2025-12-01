@@ -26,7 +26,7 @@ def connect_tcp(server_ip, server_port):
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.connect((server_ip, server_port))
-        sock.settimeout(2.0)  # recv timeout (초)
+        sock.settimeout(None)  # recv timeout (초)
         return sock, True
     except Exception as e:
         return None, False
