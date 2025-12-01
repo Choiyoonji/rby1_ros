@@ -8,10 +8,14 @@ from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import cv2
 import collections
 import pickle
 import struct
+from pathlib import Path
 from rby1_ros.main_status import MainStatus as MainState
 from rby1_ros.rby1_dyn import RBY1Dyn
 from rby1_ros.utils import *
@@ -21,6 +25,7 @@ from .cam_utils.shm_util import NamedSharedNDArray
 from .cam_utils.realsense_mp_full_ts import Realsense_MP
 from .cam_utils.zed_mp import ZED_MP
 from .cam_utils.digit_mp import DIGIT_MP
+from .trajectory import Trajectory
 
 EXO_CAM_SHM_NAME = "right_wrist_D405"
 WRI1_CAM_SHM_NAME = "external_D435I"
@@ -109,6 +114,12 @@ class MainNode(Node):
         
         self.step_hz = 30.0
         self.step_timer = self.create_timer(1/self.step_hz, self.inference_step)
+        
+        self.action_history = []
+        self.state_history = []
+        self.action_traj = None
+        self.traj_total_steps = 5
+        self.list_steps = np.linspace(1, self.traj_total_steps, self.traj_total_steps)
 
     # ----- TCP 연결 -----
     def connect(self):
@@ -205,8 +216,20 @@ class MainNode(Node):
         if not self.connected:
             return None
         try:
+            # action = send_packet(self.sock, state_dict)  # 상태 전송 및 응답 받기
+            # return action[:self.action_len]
             action = send_packet(self.sock, state_dict)  # 상태 전송 및 응답 받기
-            return action[:self.action_len]
+            action = action[0]
+            action_traj = Trajectory(0, self.traj_total_steps)
+
+            action_traj.get_coeff_qpos(self.main_state.current_joint_positions[8:15].tolist()+[self.main_state.current_right_gripper_position], np.zeros_like(action), action)
+            action_pos = []
+            for step in self.list_steps:
+                pos, _, _ = action_traj.calculate_pva_qpos(step)
+                action_pos.append(pos)
+            print(np.array(action_pos).shape)
+            return action_pos
+        
         except Exception as e:
             self.get_logger().error(f"Error during TCP communication: {e}")
             self.disconnect()
@@ -279,6 +302,36 @@ class MainNode(Node):
         self.main_state.desired_left_arm_position = np.array([])
         self.main_state.desired_left_arm_quaternion = np.array([])
         self.main_state.desired_left_gripper_position = 0.0
+        self.action_history = []
+        self.state_history = []
+        
+    def save_history_plot_png(self):
+        if len(self.action_history) == 0 or len(self.state_history) == 0:
+            return
+        action_array = np.array(self.action_history)
+        state_array = np.array(self.state_history)
+        
+        plt.figure(figsize=(16, 3 * action_array.shape[1]))
+        
+        for i in range(action_array.shape[1]):
+            plt.subplot(action_array.shape[1], 1, i+1)
+            plt.plot(action_array[:, i], label=f'Action {i}')
+            plt.plot(state_array[:, i], label=f'State {i}', alpha=0.5)
+            plt.legend()
+            plt.xlabel('Time Step')
+            plt.ylabel('Value')
+            plt.grid()
+        
+        plt.tight_layout()
+        timestamp = int(time.time())
+        home_dir = str(Path.home())
+        filename = f'{home_dir}/action_state_history_{timestamp}.png'
+        plt.savefig(filename)
+        plt.close()
+        self.get_logger().info(f'Saved action/state history plot to {filename}')
+        
+        self.action_history = []
+        self.state_history = []
         
     def inference_step(self):
         if self.main_state.is_robot_stopped:
@@ -336,6 +389,8 @@ class MainNode(Node):
             return
         
         if self.move is False:
+            if len(self.action_history) > 0 and len(self.state_history) > 0:
+                self.save_history_plot_png()
             return
         
         if np.all(np.abs(self.main_state.current_joint_positions) < 1e-3):
@@ -384,10 +439,12 @@ class MainNode(Node):
                     "arm": "right",
                     "right_arm_angle": np.array(action[:7]),
                     "left_arm_angle": self.main_state.current_joint_positions[15:22],
-                    "right_gripper": float(1.0),
+                    "right_gripper": float(1-action[7]),
                     "left_gripper": self.main_state.current_left_gripper_position,
                 }
                 self.publish_command(command_data)
+                self.action_history.append(action)
+                self.state_history.append(self.main_state.current_joint_positions[8:15].tolist() + [float(self.main_state.current_right_gripper_position)])
                 
         except KeyboardInterrupt:
             print("🛑 Interrupted (Ctrl+C)")
