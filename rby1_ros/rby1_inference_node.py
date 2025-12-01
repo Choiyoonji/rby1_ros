@@ -41,7 +41,7 @@ class RBY1InferenceNode(Node):
         # ----- 파라미터 (IP/PORT/TASK) -----
         self.declare_parameter("server_ip", "127.0.0.1")
         self.declare_parameter("server_port", 12345)
-        self.declare_parameter("task", "default task")  # 필요하면 바꾸기
+        self.declare_parameter("task", "Pick up the eclipse case")  # 필요하면 바꾸기
 
         self.server_ip = self.get_parameter("server_ip").get_parameter_value().string_value
         self.server_port = self.get_parameter("server_port").get_parameter_value().integer_value
