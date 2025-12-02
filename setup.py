@@ -43,6 +43,7 @@ setup(
             'rby1_record_node_joint_both = rby1_ros.rby1_data_node_joint_both:main',
             'visualize = rby1_ros.visualize:main',
             'main_node_inference = rby1_ros.main_node_inference:main',
+            'main_node_gr00t = rby1_ros.main_node_gr00t:main',
         ],
     },
 )

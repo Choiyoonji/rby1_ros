@@ -1,3 +1,6 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
 import numpy as np
 import time
 import rclpy
@@ -18,7 +21,7 @@ import pickle
 import struct
 from pathlib import Path
 from rby1_ros.main_status import MainStatus as MainState
-from rby1_ros.rby1_dyn import RBY1Dyn
+# from rby1_ros.rby1_dyn import RBY1Dyn
 from rby1_ros.utils import *
 
 from .cam_utils.shm_util import NamedSharedNDArray
@@ -27,15 +30,17 @@ from .cam_utils.zed_mp import ZED_MP
 from .cam_utils.digit_mp import DIGIT_MP
 from .trajectory import Trajectory
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-target_path = os.path.join(current_dir, 'Isaac-GR00T', 'gr00t', 'eval')
-if target_path not in sys.path:
-    sys.path.append(target_path)
-try:
-    from service import ExternalRobotInferenceClient
-    print("Service module imported successfully.")
-except ImportError as e:
-    print(f"Failed to import service: {e}")
+from .Isaac_GR00T.gr00t.eval.service import ExternalRobotInferenceClient
+
+# current_dir = os.path.dirname(os.path.abspath(__file__))
+# target_path = os.path.join(current_dir, 'Isaac-GR00T', 'gr00t', 'eval')
+# if target_path not in sys.path:
+#     sys.path.append(target_path)
+# try:
+#     from service import ExternalRobotInferenceClient
+#     print("Service module imported successfully.")
+# except ImportError as e:
+#     print(f"Failed to import service: {e}")
     
 
 EXO_CAM_SHM_NAME = "right_wrist_D405"
@@ -224,10 +229,11 @@ class MainNode(Node):
         try:
             action_chunk = self.policy.get_action(state_dict)  # 상태 전송 및 응답 받기
             
-            N = action_chunk["action.single_arm"].shape[0]
+            N = action_chunk["action.arm_joint"].shape[0]
+            N=1
             actions = [
                 np.concatenate([
-                    np.atleast_1d(action_chunk["action.single_arm"][i]),
+                    np.atleast_1d(action_chunk["action.arm_joint"][i]),
                     np.atleast_1d(action_chunk["action.gripper"][i])
                 ]).tolist()
                 for i in range(N)
@@ -413,7 +419,7 @@ class MainNode(Node):
                 input_payload = {
                     "video.exterior_image": img_exo[np.newaxis, ...],
                     "video.wrist_image": img_wri1[np.newaxis, ...],
-                    "state.single_arm": np.array(robot_state[:7], dtype=np.float32)[np.newaxis, ...],
+                    "state.arm_joint": np.array(robot_state[:7], dtype=np.float32)[np.newaxis, ...],
                     "state.gripper": np.array([robot_state[7]], dtype=np.float32)[np.newaxis, ...],
                     "annotation.human.task_description": [self.prompt],
                 }
