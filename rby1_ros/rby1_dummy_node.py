@@ -7,21 +7,22 @@ import time
 # Message Imports
 from std_msgs.msg import Float32MultiArray
 from rby1_interfaces.msg import State, Command, EEpos, FTsensor
+from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
 
 # Define QoS profiles compatible with your main node
-qos_state_latest = QoSProfile(
-    reliability=ReliabilityPolicy.BEST_EFFORT,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=1,
-    durability=DurabilityPolicy.VOLATILE
-)
+# qos_state_latest = QoSProfile(
+#     reliability=ReliabilityPolicy.BEST_EFFORT,
+#     history=HistoryPolicy.KEEP_LAST,
+#     depth=1,
+#     durability=DurabilityPolicy.VOLATILE
+# )
 
-qos_cmd = QoSProfile(
-    reliability=ReliabilityPolicy.RELIABLE,
-    history=HistoryPolicy.KEEP_LAST,
-    depth=10,
-    durability=DurabilityPolicy.VOLATILE
-)
+# qos_cmd = QoSProfile(
+#     reliability=ReliabilityPolicy.RELIABLE,
+#     history=HistoryPolicy.KEEP_LAST,
+#     depth=10,
+#     durability=DurabilityPolicy.VOLATILE
+# )
 
 class DummyRBY1Node(Node):
     def __init__(self):

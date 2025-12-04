@@ -324,7 +324,7 @@ class RBY1Node(Node):
         self.robot.start_state_update(robot_state_callback, 1 / self.settings.update_dt)
 
         self.dyn_robot = self.robot.get_dynamics()
-        self.dyn_state = self.dyn_robot.make_state(["base", "link_torso_5", "link_right_arm_6"],
+        self.dyn_state = self.dyn_robot.make_state(["base", "link_torso_5", "link_right_arm_6", "link_left_arm_6"],
                                      SystemContext.robot_model.robot_joint_names)
         
         self.set_limits()
@@ -507,15 +507,15 @@ class RBY1Node(Node):
                 else:
                     right_T = SystemContext.rby1_state.right_arm_locked_pose
                 
-                if SystemContext.rby1_state.is_left_following:
-                    SystemContext.control_state.desired_left_ee_T = pos_to_se3(
-                        SystemContext.control_state.desired_left_ee_position["position"],
-                        SystemContext.control_state.desired_left_ee_position["quaternion"]
-                    )
-                    left_T = SystemContext.control_state.desired_left_ee_T
-                    SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
-                else:
-                    left_T = SystemContext.rby1_state.left_arm_locked_pose
+                # if SystemContext.rby1_state.is_left_following:
+                #     SystemContext.control_state.desired_left_ee_T = pos_to_se3(
+                #         SystemContext.control_state.desired_left_ee_position["position"],
+                #         SystemContext.control_state.desired_left_ee_position["quaternion"]
+                #     )
+                #     left_T = SystemContext.control_state.desired_left_ee_T
+                #     SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
+                # else:
+                left_T = SystemContext.rby1_state.left_arm_locked_pose
                 
                 if SystemContext.rby1_state.is_torso_following:
                     SystemContext.control_state.desired_torso_ee_T = pos_to_se3(
@@ -578,11 +578,12 @@ class RBY1Node(Node):
                 self.get_logger().info("Component control mode")
                 
                 torso_builder.add_target("base", "link_torso_5", torso_T, 1, np.pi * 0.5, 10, np.pi * 20)
-                right_builder.add_target("base", "link_right_arm_6",
-                                            right_T @ np.linalg.inv(self.settings.T_hand_offset),
+                right_builder.add_target("base", "link_right_arm_6", right_T @ np.linalg.inv(self.settings.T_hand_offset),
                                             2, np.pi * 2, 100, np.pi * 80)
                 left_builder.add_target("base", "link_left_arm_6", left_T @ np.linalg.inv(self.settings.T_hand_offset),
                                         2, np.pi * 2, 100, np.pi * 80)
+                
+                print(SystemContext.rby1_state.left_arm_locked_pose)
                 self.get_logger().info("Targets added to builders.")
                 ctrl_builder = (
                     rby.BodyComponentBasedCommandBuilder()
@@ -625,6 +626,7 @@ def main():
     global rby1_node
     rclpy.init()
     rby1_node = RBY1Node()
+    
     rclpy.spin(rby1_node)
     rby1_node.destroy_node()
     rclpy.shutdown()

@@ -11,7 +11,7 @@ import time
 
 # 민감도 설정 (조이스틱 값 -1.0 ~ 1.0에 곱해질 계수)
 SCALE_POS = 0.005  # 위치 이동 스케일 (미터 단위 추정)
-SCALE_ROT = 0.005   # 회전 속도 스케일 (라디안 단위 추정)
+SCALE_ROT = 1   # 회전 속도 스케일 (라디안 단위 추정)
 DEADZONE = 0.5    # 조이스틱 데드존 (노이즈 방지)
 
 class XboxControllerNode(Node):
@@ -44,7 +44,7 @@ class XboxControllerNode(Node):
         self.last_arm_switch_time = 0
 
         # 주기적으로 입력을 체크하고 퍼블리시 (30Hz)
-        self.timer = self.create_timer(1.0/30.0, self.timer_callback)
+        self.timer = self.create_timer(1.0/5.0, self.timer_callback)
 
     def apply_deadzone(self, value):
         if abs(value) < DEADZONE:

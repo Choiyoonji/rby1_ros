@@ -81,6 +81,7 @@ class MainNode(Node):
         self.connected = False
 
         self.action_plan = collections.deque()
+        self.last_planned_state = {}
 
         self.get_logger().info(
             f"[init] RBY1CommandNode started."
@@ -112,8 +113,8 @@ class MainNode(Node):
         self.step_hz = 30.0
         self.step_timer = self.create_timer(1/self.step_hz, self.step)
         
-        self.pos_traj = Move_ee(Hz=self.step_hz, duration=2.0)
-        self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=2.0)
+        self.pos_traj = Move_ee(Hz=self.step_hz, duration=0.3)
+        self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=0.3)
         
         self.action_history = []
         self.state_history = []
@@ -123,15 +124,15 @@ class MainNode(Node):
         
         self.action_map = {
             "image": [self.publish_images],
-            "left_joint": [self.calc_joint_traj, "dtheta", ["current_left_arm_angle"]],
-            "right_joint": [self.calc_joint_traj, "dtheta", ["current_right_arm_angle"]],
-            "both_joint": [self.calc_joint_traj, "dtheta", ["current_right_arm_angle", "current_left_arm_angle"]],
-            "left_pos": [self.calc_ee_pos_traj, "dpos", ["current_left_arm_position"]],
-            "right_pos": [self.calc_ee_pos_traj, "dpos", ["current_right_arm_position"]],
-            "both_pos": [self.calc_ee_pos_traj, "dpos", ["current_right_arm_position", "current_left_arm_position"]],
-            "left_rot": [self.calc_ee_rot_traj, "drot", ["current_left_arm_quaternion"]],
-            "right_rot": [self.calc_ee_rot_traj, "drot", ["current_right_arm_quaternion"]],
-            "both_rot": [self.calc_ee_rot_traj, "drot", ["current_right_arm_quaternion", "current_left_arm_quaternion"]],
+            "left_joint": [self.calc_joint_traj, "dtheta", ["desired_left_arm_angle"]],
+            "right_joint": [self.calc_joint_traj, "dtheta", ["desired_right_arm_angle"]],
+            "both_joint": [self.calc_joint_traj, "dtheta", ["desired_right_arm_angle", "desired_left_arm_angle"]],
+            "left_pos": [self.calc_ee_pos_traj, "dpos", ["desired_left_arm_position"]],
+            "right_pos": [self.calc_ee_pos_traj, "dpos", ["desired_right_arm_position"]],
+            "both_pos": [self.calc_ee_pos_traj, "dpos", ["desired_right_arm_position", "desired_left_arm_position"]],
+            "left_rot": [self.calc_ee_rot_traj, "drot", ["desired_left_arm_quaternion"]],
+            "right_rot": [self.calc_ee_rot_traj, "drot", ["desired_right_arm_quaternion"]],
+            "both_rot": [self.calc_ee_rot_traj, "drot", ["desired_right_arm_quaternion", "desired_left_arm_quaternion"]],
             "left_gripper_open": [self.set_gripper_position, "left", [1.0]],
             "right_gripper_open": [self.set_gripper_position, "right", [1.0]],
             "left_gripper_close": [self.set_gripper_position, "left", [0.0]],
@@ -220,37 +221,76 @@ class MainNode(Node):
             self.get_logger().error(f'Unknown action mode: {msg.mode}')
             return
         
+        # [수정] 대기 중인 action이 없다면, 실제 로봇 현재 상태부터 시작하도록 캐시 초기화
+        # if len(self.action_plan) == 0:
+        #     self.last_planned_state.clear()
+
         action_info = self.action_map[msg.mode]
         
         if msg.mode == "image":
-            self.action_info[0]()
+            action_info[0]()
             return
+        
+        # 그리퍼 제어는 궤적(Trajectory)이 아닌 즉시 명령이므로 예외 처리
         if msg.mode in ["left_gripper_open", "right_gripper_open", "left_gripper_close", "right_gripper_close"]:
             arm = action_info[1]
             position = action_info[2][0]
             self.set_gripper_position(arm, position)
+            # 그리퍼 동작은 action_plan에 넣지 않고 즉시 반영하거나, 필요하다면 별도 로직 추가
             return
 
         action_func = action_info[0]
         action_arg1_name = action_info[1] if len(action_info) > 1 else None
         action_arg2_names = action_info[2] if len(action_info) > 2 else None
         
-        action_arg1 = getattr(msg, action_arg1_name) if action_arg1_name else None
+        action_arg1 = getattr(msg, action_arg1_name).data if action_arg1_name else None
         action_arg2 = None
+        
         if action_arg2_names:
             action_arg2 = []
             for name in action_arg2_names:
-                action_arg2.extend(getattr(self.main_state, name))
-        
+                # [수정] 계획된 마지막 상태가 있으면 그것을 사용, 없으면 현재 센서 값 사용
+                if name in self.last_planned_state:
+                    val = self.last_planned_state[name]
+                else:
+                    val = getattr(self.main_state, name)
+                action_arg2.extend(val if isinstance(val, list) else val.tolist() if hasattr(val, 'tolist') else [val])
+            
+            # numpy array로 변환 (필요시)
+            action_arg2 = np.array(action_arg2)
+
+        # 궤적 계산
         _traj = action_func(action_arg2, action_arg1)
+        
+        if _traj is None or len(_traj) == 0:
+            return
+
         traj = []
         for t in _traj:
             traj.append([msg.mode, t])
-        
-        if msg.cancel_last_action:
-            self.action_plan.clear()
             
+        # print(f"Planned {len(traj)} steps for {msg.mode}")
+        
         self.action_plan.extend(traj)
+
+        # [수정] 계산된 궤적의 마지막 값을 다음 시작점으로 저장 (Update last planned state)
+        last_point = _traj[-1]
+        
+        # "both" 모드일 경우 데이터를 쪼개서 저장해야 함
+        if len(action_arg2_names) == 2:  # 예: ["current_right_...", "current_left_..."]
+            name_right = action_arg2_names[0]
+            name_left = action_arg2_names[1]
+            
+            # 데이터 길이에 따라 분할 (Joint: 7, Pos: 3, Rot(Quat): 4)
+            mid_idx = len(last_point) // 2
+            self.last_planned_state[name_right] = last_point[:mid_idx]
+            self.last_planned_state[name_left] = last_point[mid_idx:]
+            
+        elif len(action_arg2_names) == 1: # 단일 팔 제어
+            name = action_arg2_names[0]
+            self.last_planned_state[name] = last_point
+        
+        print(f"Updated last planned state: {self.last_planned_state}")
         
     def set_gripper_position(self, arm: str, position: float):
         if arm == "right":
@@ -263,21 +303,21 @@ class MainNode(Node):
     def calc_joint_traj(self, current_angle, dtheta):
         pass
         
-    def calc_ee_pos_traj(self, current_pos, dpos):
+    def calc_ee_pos_traj(self, last_pos, dpos):
         if len(dpos) > 3:
             dpos_right = dpos[:3]
             dpos_left = dpos[3:]
-            traj_right = self.pos_traj.plan_move_ee(current_pos[:3], dpos_right)
-            traj_left = self.pos_traj.plan_move_ee(current_pos[3:], dpos_left)
+            traj_right = self.pos_traj.plan_move_ee(last_pos[:3], dpos_right)
+            traj_left = self.pos_traj.plan_move_ee(last_pos[3:], dpos_left)
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
             return traj
         
-        traj = self.pos_traj.plan_move_ee(current_pos, dpos)
+        traj = self.pos_traj.plan_move_ee(last_pos, dpos)
         return traj
         
-    def calc_ee_rot_traj(self, current_quat, drot):
+    def calc_ee_rot_traj(self, last_quat, drot):
         if len(drot) > 3:
             drot_right = drot[:3]
             drot_left = drot[3:]
@@ -291,8 +331,8 @@ class MainNode(Node):
             axis_right = ['x', 'y', 'z'][axis_right]
             axis_left = ['x', 'y', 'z'][axis_left]
             
-            traj_right = self.rot_traj.plan_rotate_ee(current_quat[:4], drot_right, type='global', axis=axis_right)
-            traj_left = self.rot_traj.plan_rotate_ee(current_quat[4:], drot_left, type='global', axis=axis_left)
+            traj_right = self.rot_traj.plan_rotate_ee(last_quat[:4], axis_right, drot_right, type='local')
+            traj_left = self.rot_traj.plan_rotate_ee(last_quat[4:], axis_left, drot_left, type='local')
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
@@ -301,8 +341,9 @@ class MainNode(Node):
         axis = np.argmax(np.abs(drot))
         drot = drot[axis]
         axis = ['x', 'y', 'z'][axis]
+        print(f"Rotating around axis: {axis} by {drot} degrees")
         
-        traj = self.rot_traj.plan_rotate_ee(current_quat, drot, type='global', axis=axis)
+        traj = self.rot_traj.plan_rotate_ee(last_quat, axis, drot, type='local')
         return traj
     
     def publish_images(self):
@@ -330,6 +371,7 @@ class MainNode(Node):
             self.get_logger().error(f"Error publishing: {e}")
         
     def publish_command(self, command_data):
+        print(f"Publishing command: {command_data}")
         cmd_msg = Command()
         if command_data["mode"] == "signal":
             cmd_msg.is_active = True
@@ -387,7 +429,7 @@ class MainNode(Node):
                 cmd_msg.right_btn = True
                 cmd_msg.left_btn = True
                 
-        elif command_data["mode"] == "pos":
+        elif command_data["mode"] == "rot":
             cmd_msg.control_mode = "ee_position"
             
             if command_data["arm"] == "right":
@@ -412,8 +454,8 @@ class MainNode(Node):
             cmd_msg.desired_left_ee_pos.position = Float32MultiArray(data=self.main_state.desired_left_arm_position.tolist())
             cmd_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
                 
-        cmd_msg.desired_right_gripper_pos = command_data["right_gripper"]
-        cmd_msg.desired_left_gripper_pos = command_data["left_gripper"]
+        cmd_msg.desired_right_gripper_pos = self.main_state.desired_right_gripper_position
+        cmd_msg.desired_left_gripper_pos = self.main_state.desired_left_gripper_position
         cmd_msg.is_active = True
         cmd_msg.ready = self.ready
         cmd_msg.move = self.move
@@ -438,8 +480,10 @@ class MainNode(Node):
         self.main_state.desired_joint_positions = self.main_state.current_joint_positions.copy()
         self.main_state.desired_left_arm_angle = self.main_state.current_left_arm_angle.copy()
         self.main_state.desired_right_arm_angle = self.main_state.current_right_arm_angle.copy()
-        self.action_history = []
-        self.state_history = []
+        self.last_planned_state = {}
+        self.action_plan.clear()
+        # self.action_history = []
+        # self.state_history = []
         
     def save_history_plot_png(self):
         if len(self.action_history) == 0 or len(self.state_history) == 0:
@@ -521,7 +565,9 @@ class MainNode(Node):
             return
         
         if self.move is False:
+            print("⚠️ Move mode is off. Waiting for 'f' key to start moving.")
             if len(self.action_history) > 0 and len(self.state_history) > 0:
+                print("Saving action/state history plot...")
                 self.save_history_plot_png()
             return
         
@@ -543,6 +589,14 @@ class MainNode(Node):
                     "arm": arm,
                     "action": action[1]
                 })
+                
+            self.action_history.append(
+                self.main_state.desired_right_arm_position.tolist() + self.main_state.desired_right_arm_quaternion.tolist()
+            )
+            self.state_history.append(
+                self.main_state.current_right_arm_position.tolist() + self.main_state.current_right_arm_quaternion.tolist()
+            )
+            
                 
         except KeyboardInterrupt:
             print("🛑 Interrupted (Ctrl+C)")

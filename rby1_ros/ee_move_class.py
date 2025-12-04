@@ -1,4 +1,4 @@
-from trajectory import Trajectory
+from .trajectory import Trajectory
 import numpy as np
 from typing import List, Tuple
 import time
@@ -62,8 +62,10 @@ class Move_ee:
         self.trajectory_ee = Trajectory(0.0, self.duration)
         init_state = np.array(start_ee_pos)
         final_state = init_state + np.array(delta_ee_pos)
+        print(f"Planning EE move from {init_state} to {final_state} over {self.duration}s")
         self.trajectory_ee.get_coeff(init_state, final_state)
         
+        self.plan_desired_ee_pos = []
         prev_pos = start_ee_pos.copy()
         for step in range(1, int(self.total_step) + 1):
             current_time = step / self.Hz
@@ -158,6 +160,7 @@ class Rotate_ee:
          
         self.trajectory_ee_quat.get_coeff_quat(init_state, final_state)
         
+        self.plan_desired_ee_quat = []
         prev_quat = start_ee_quat.copy()
         for step in range(1, int(self.total_step) + 1):
             current_time = step / self.Hz
