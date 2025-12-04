@@ -2,48 +2,49 @@ import numpy as np
 import time
 import rclpy
 from rclpy.node import Node
+from sensor_msgs.msg import Image
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command
+from rby1_interfaces.msg import EEpos, FTsensor, State, Command, Action
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
-from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
+from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
 
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import cv2
+from cv_bridge import CvBridge
+import collections
+from pathlib import Path
 from rby1_ros.main_status import MainStatus as MainState
 from rby1_ros.rby1_dyn import RBY1Dyn
 from rby1_ros.utils import *
 
+from .cam_utils.shm_util import NamedSharedNDArray
+from .cam_utils.realsense_mp_full_ts import Realsense_MP
+from .cam_utils.zed_mp import ZED_MP
+from .cam_utils.digit_mp import DIGIT_MP
+from .ee_move_class import Move_ee, Rotate_ee
+
+EXO_CAM_SHM_NAME = "right_wrist_D405"
+WRI1_CAM_SHM_NAME = "external_D435I"
+# CAM3_SHM_NAME = "left_wrist_D405"  # 필요시 사용
+
 class MainNode(Node):
     def __init__(self):
-        super().__init__('main_node_only_right')
-
+        super().__init__('main_node_command')
+        
         self.ready: bool = False
         self.move: bool = False
         self.stop: bool = False
-        self.record: bool = False
 
         self.main_state = MainState()
-
-        # /record : 제어 토글 → 라치드 + Reliable (마지막 값 보장)
-        self.record_pub = self.create_publisher(
-            Bool,
-            '/record',
-            qos_ctrl_latched
-        )
-
-        # /control/action : 외부에서 들어오는 행동 벡터 → 주기 신호
-        self.action_sub = self.create_subscription(
-            Float32MultiArray,
-            '/control/action',
-            self.action_callback,
-            qos_cmd
-        )
-
+        
         # /rby1/state : 로봇 상태 → 최신값만
         self.rby1_sub = self.create_subscription(
             State,
             '/rby1/state',
-            self.rby1_callback,
+            self.state_callback,
             qos_state_latest
         )
 
@@ -53,77 +54,441 @@ class MainNode(Node):
             '/control/command',
             qos_cmd
         )
-
-        self.main_timer = self.create_timer(1/100.0, self.main_loop)
-        self.command_timer = self.create_timer(1/100.0, self.publish_command)
         
-        self.command_img = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.action_sub = self.create_subscription(
+            Action,
+            '/control/action',
+            self.action_callback,
+            qos_cmd
+        )
+        
+        self.wrist_img_pub = self.create_publisher(
+            Image,
+            '/camera/right_wrist/image_raw',
+            qos_image_stream
+        )
+        
+        self.external_img_pub = self.create_publisher(
+            Image,
+            '/camera/external/image_raw',
+            qos_image_stream
+        )
+        
+        self.bridge = CvBridge()
+
+        # ----- 내부 상태 -----
+        self.sock = None
+        self.connected = False
+
+        self.action_plan = collections.deque()
+
+        self.get_logger().info(
+            f"[init] RBY1CommandNode started."
+        )
+        
+        self.command_data = {
+            "mode": "joint_position", # joint_position / cartesian_position
+            "arm": "right", # right / left / both
+            "right_arm_angle": np.zeros(7),
+            "left_arm_angle": np.zeros(7),
+            "right_arm_pos": np.zeros(7), # (xyz + quaternion)
+            "left_arm_pos": np.zeros(7), # (xyz + quaternion)
+            "right_gripper": 1.0,
+            "left_gripper": 1.0,
+        }
+        
+        # ----- camera process open -----
+        self.cam1 = self.create_cam_process("D405", EXO_CAM_SHM_NAME)
+        self.cam2 = self.create_cam_process("D435I", WRI1_CAM_SHM_NAME)
+
+        self.cam1.start()
+        self.cam2.start()
+
+        time.sleep(3.0) # Wait for camera to initialize
+        self.get_logger().info("Camera processes started.")
+        
+        self.shm1, self.shm2 = self.open_all_shm()
+        
+        self.step_hz = 30.0
+        self.step_timer = self.create_timer(1/self.step_hz, self.step)
+        
+        self.pos_traj = Move_ee(Hz=self.step_hz, duration=2.0)
+        self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=2.0)
+        
+        self.action_history = []
+        self.state_history = []
+        self.action_traj = None
+        self.traj_total_steps = 5
+        self.list_steps = np.linspace(1, self.traj_total_steps, self.traj_total_steps)
+        
+        self.action_map = {
+            "image": [self.publish_images],
+            "left_joint": [self.calc_joint_traj, "dtheta", ["current_left_arm_angle"]],
+            "right_joint": [self.calc_joint_traj, "dtheta", ["current_right_arm_angle"]],
+            "both_joint": [self.calc_joint_traj, "dtheta", ["current_right_arm_angle", "current_left_arm_angle"]],
+            "left_pos": [self.calc_ee_pos_traj, "dpos", ["current_left_arm_position"]],
+            "right_pos": [self.calc_ee_pos_traj, "dpos", ["current_right_arm_position"]],
+            "both_pos": [self.calc_ee_pos_traj, "dpos", ["current_right_arm_position", "current_left_arm_position"]],
+            "left_rot": [self.calc_ee_rot_traj, "drot", ["current_left_arm_quaternion"]],
+            "right_rot": [self.calc_ee_rot_traj, "drot", ["current_right_arm_quaternion"]],
+            "both_rot": [self.calc_ee_rot_traj, "drot", ["current_right_arm_quaternion", "current_left_arm_quaternion"]],
+            "left_gripper_open": [self.set_gripper_position, "left", [1.0]],
+            "right_gripper_open": [self.set_gripper_position, "right", [1.0]],
+            "left_gripper_close": [self.set_gripper_position, "left", [0.0]],
+            "right_gripper_close": [self.set_gripper_position, "right", [0.0]],
+        }
     
-        cv2.namedWindow("control", cv2.WINDOW_NORMAL)
-        cv2.resizeWindow("control", 480, 640)
-
-    def action_callback(self, msg):
-        self.get_logger().info(f'Received action data: {msg.data}')
-        data = msg.data
-        self.main_state.is_controller_initialized = True
-        self.main_state.is_controller_connected = bool(data[0] > 0.5)
-        self.main_state.desired_joint_positions = np.array(data[1:8])
-        self.main_state.desired_right_gripper_position = data[8]
-
-    def rby1_callback(self, msg):
-        # self.get_logger().info(f'Received RBY1 data')
+    # ----- /rby1/state 콜백 -----
+    def state_callback(self, msg: State):
+        self.latest_state_msg = msg
         self.main_state.is_robot_connected = True
 
         self.main_state.is_robot_initialized = msg.is_initialized
         self.main_state.is_robot_stopped = msg.is_stopped
         
         self.main_state.current_joint_positions = np.array(msg.joint_positions.data)
+        self.main_state.current_left_arm_angle = self.main_state.current_joint_positions[15:22]
+        self.main_state.current_right_arm_angle = self.main_state.current_joint_positions[8:15]
         
         self.main_state.current_torso_position = np.array(msg.torso_ee_pos.position.data)
         self.main_state.current_torso_quaternion = np.array(msg.torso_ee_pos.quaternion.data)
         self.main_state.current_right_arm_position = np.array(msg.right_ee_pos.position.data)
         self.main_state.current_right_arm_quaternion = np.array(msg.right_ee_pos.quaternion.data)
+        self.main_state.current_left_arm_position = np.array(msg.left_ee_pos.position.data)
+        self.main_state.current_left_arm_quaternion = np.array(msg.left_ee_pos.quaternion.data)
 
         self.main_state.current_right_gripper_position = msg.right_gripper_pos
+        self.main_state.current_left_gripper_position = msg.left_gripper_pos
+        
+    def create_cam_process(self, cam_type, shm_name, serial_number=None):
+        if cam_type == "D405" or cam_type == "D435I":
+            return Realsense_MP(
+                shm_name=shm_name,
+                device_name=cam_type,
+                width=640,
+                height=480,
+                fps=30,
+                serial_number=serial_number,
+            )
+        elif cam_type == "ZED":
+            return ZED_MP(
+                shm_left=shm_name+"_left",
+                shm_right=shm_name+"_right",
+                shm_meta=shm_name+"_meta",
+                width=1280, height=720, fps=30,
+                serial_number=None,
+                camera_id=0,
+                verbose=True,
+            )
+        elif cam_type == "DIGIT":
+            return DIGIT_MP(shm_name, name=shm_name)
+        else:
+            self.get_logger().error(f"Unknown camera type: {cam_type}")
+            return None
+        
+    def open_all_shm(self, timeout_sec: float = 5.0):
+        t0 = time.time()
+        shm1 = shm2 = None
+        while time.time() - t0 < timeout_sec:
+            try:
+                shm1 = shm1 or NamedSharedNDArray.open(EXO_CAM_SHM_NAME)
+                shm2 = shm2 or NamedSharedNDArray.open(WRI1_CAM_SHM_NAME)
+                if shm1 is not None and shm2 is not None:
+                    break
+            except FileNotFoundError:
+                pass
+            time.sleep(0.05)
+        return shm1, shm2
+    
+    def ensure_bgr(self, img: np.ndarray) -> np.ndarray:
+        if img is None:
+            return None
+        if img.ndim == 2:
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        if img.ndim == 3 and img.shape[2] == 1:
+            return cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        return img
 
-    def publish_command(self):
-        if self.main_state.is_robot_connected:
-            # self.get_logger().info('Publishing command message')
-            command_msg = Command()
+    def preprocess_image(self, image):
+        if image is None:
+            return np.zeros((256, 256, 3), dtype=np.uint8)
+        return cv2.resize(cv2.cvtColor(image, cv2.COLOR_BGR2RGB), (256, 256))
+    
+    def action_callback(self, msg: Action):
+        self.get_logger().info(f'Received action data: {msg.mode}')
+        if msg.mode not in self.action_map.keys():
+            self.get_logger().error(f'Unknown action mode: {msg.mode}')
+            return
+        
+        action_info = self.action_map[msg.mode]
+        
+        if msg.mode == "image":
+            self.action_info[0]()
+            return
+        if msg.mode in ["left_gripper_open", "right_gripper_open", "left_gripper_close", "right_gripper_close"]:
+            arm = action_info[1]
+            position = action_info[2][0]
+            self.set_gripper_position(arm, position)
+            return
+
+        action_func = action_info[0]
+        action_arg1_name = action_info[1] if len(action_info) > 1 else None
+        action_arg2_names = action_info[2] if len(action_info) > 2 else None
+        
+        action_arg1 = getattr(msg, action_arg1_name) if action_arg1_name else None
+        action_arg2 = None
+        if action_arg2_names:
+            action_arg2 = []
+            for name in action_arg2_names:
+                action_arg2.extend(getattr(self.main_state, name))
+        
+        _traj = action_func(action_arg2, action_arg1)
+        traj = []
+        for t in _traj:
+            traj.append([msg.mode, t])
+        
+        if msg.cancel_last_action:
+            self.action_plan.clear()
             
-            # print(self.main_state.is_controller_connected)
-
-            command_msg.is_active = self.main_state.is_controller_connected
-            command_msg.control_mode = "joint_position"
-
-            command_msg.desired_joint_positions = Float32MultiArray(data=self.main_state.desired_joint_positions.tolist())
-
-            command_msg.desired_right_gripper_pos = self.main_state.desired_right_gripper_position
-
-            command_msg.estop = False
-
-            command_msg.ready = self.ready
-            command_msg.move = self.move
-            command_msg.stop = self.stop
+        self.action_plan.extend(traj)
+        
+    def set_gripper_position(self, arm: str, position: float):
+        if arm == "right":
+            self.main_state.desired_right_gripper_position = position
+        elif arm == "left":
+            self.main_state.desired_left_gripper_position = position
+        else:
+            self.get_logger().error(f"Unknown arm for gripper: {arm}")
+        
+    def calc_joint_traj(self, current_angle, dtheta):
+        pass
+        
+    def calc_ee_pos_traj(self, current_pos, dpos):
+        if len(dpos) > 3:
+            dpos_right = dpos[:3]
+            dpos_left = dpos[3:]
+            traj_right = self.pos_traj.plan_move_ee(current_pos[:3], dpos_right)
+            traj_left = self.pos_traj.plan_move_ee(current_pos[3:], dpos_left)
+            traj = []
+            for t_right, t_left in zip(traj_right, traj_left):
+                traj.append(np.concatenate([t_right, t_left]))
+            return traj
+        
+        traj = self.pos_traj.plan_move_ee(current_pos, dpos)
+        return traj
+        
+    def calc_ee_rot_traj(self, current_quat, drot):
+        if len(drot) > 3:
+            drot_right = drot[:3]
+            drot_left = drot[3:]
             
+            axis_right = np.argmax(np.abs(drot_right))
+            axis_left = np.argmax(np.abs(drot_left))
+            
+            drot_right = drot_right[axis_right]
+            drot_left = drot_left[axis_left]
+            
+            axis_right = ['x', 'y', 'z'][axis_right]
+            axis_left = ['x', 'y', 'z'][axis_left]
+            
+            traj_right = self.rot_traj.plan_rotate_ee(current_quat[:4], drot_right, type='global', axis=axis_right)
+            traj_left = self.rot_traj.plan_rotate_ee(current_quat[4:], drot_left, type='global', axis=axis_left)
+            traj = []
+            for t_right, t_left in zip(traj_right, traj_left):
+                traj.append(np.concatenate([t_right, t_left]))
+            return traj
+        
+        axis = np.argmax(np.abs(drot))
+        drot = drot[axis]
+        axis = ['x', 'y', 'z'][axis]
+        
+        traj = self.rot_traj.plan_rotate_ee(current_quat, drot, type='global', axis=axis)
+        return traj
+    
+    def publish_images(self):
+        try:
+            color1 = self.ensure_bgr(self.shm1.as_array().copy())
+            color2 = self.ensure_bgr(self.shm2.as_array().copy())
+            # 현재 시간 고정 (스냅샷 시간)
+            now = self.get_clock().now().to_msg()
+            
+            # 첫 번째 이미지 메시지 생성
+            msg1 = self.bridge.cv2_to_imgmsg(self.preprocess_image(color1), encoding="bgr8")
+            msg1.header.stamp = now
+            msg1.header.frame_id = "camera_main"
+            
+            # 두 번째 이미지 메시지 생성
+            msg2 = self.bridge.cv2_to_imgmsg(self.preprocess_image(color2), encoding="bgr8")
+            msg2.header.stamp = now
+            msg2.header.frame_id = "camera_wrist"
+            
+            # 전송
+            self.pub_main.publish(msg1)
+            self.pub_wrist.publish(msg2)
+            
+        except Exception as e:
+            self.get_logger().error(f"Error publishing: {e}")
+        
+    def publish_command(self, command_data):
+        cmd_msg = Command()
+        if command_data["mode"] == "signal":
+            cmd_msg.is_active = True
+            cmd_msg.ready = self.ready
+            cmd_msg.move = self.move
+            cmd_msg.stop = self.stop
+                
             self.stop = False
             self.ready = False
-
-            self.command_pub.publish(command_msg)
+            
+            self.command_pub.publish(cmd_msg)
+            
+            return
+            
+        elif command_data["mode"] == "joint":
+            cmd_msg.control_mode = "joint_position"
+            
+            if command_data["arm"] == "right":
+                self.main_state.desired_right_arm_angle = command_data["action"]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = False
+            elif command_data["arm"] == "left":
+                self.main_state.desired_left_arm_angle = command_data["action"]
+                cmd_msg.right_btn = False
+                cmd_msg.left_btn = True
+            elif command_data["arm"] == "both":
+                self.main_state.desired_right_arm_angle = command_data["action"][:7]
+                self.main_state.desired_left_arm_angle = command_data["action"][7:]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = True
+                
+            self.main_state.desired_joint_positions = np.concatenate([
+                self.main_state.desired_right_arm_angle,
+                self.main_state.desired_left_arm_angle,
+            ])
+                
+            cmd_msg.desired_joint_positions = Float32MultiArray(
+                data=self.main_state.desired_joint_positions.tolist()
+            )
+                
+        elif command_data["mode"] == "pos":
+            cmd_msg.control_mode = "ee_position"
+            
+            if command_data["arm"] == "right":
+                self.main_state.desired_right_arm_position = command_data["action"]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = False
+            elif command_data["arm"] == "left":
+                self.main_state.desired_left_arm_position = command_data["action"]
+                cmd_msg.right_btn = False
+                cmd_msg.left_btn = True
+            elif command_data["arm"] == "both":
+                self.main_state.desired_right_arm_position = command_data["action"][:3]
+                self.main_state.desired_left_arm_position = command_data["action"][3:]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = True
+                
+        elif command_data["mode"] == "pos":
+            cmd_msg.control_mode = "ee_position"
+            
+            if command_data["arm"] == "right":
+                self.main_state.desired_right_arm_quaternion = command_data["action"]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = False
+            elif command_data["arm"] == "left":
+                self.main_state.desired_left_arm_quaternion = command_data["action"]
+                cmd_msg.right_btn = False
+                cmd_msg.left_btn = True
+            elif command_data["arm"] == "both":
+                self.main_state.desired_right_arm_quaternion = command_data["action"][:4]
+                self.main_state.desired_left_arm_quaternion = command_data["action"][4:]
+                cmd_msg.right_btn = True
+                cmd_msg.left_btn = True
+                
+        if command_data["mode"] in ["pos", "rot"]:
+            cmd_msg.desired_right_ee_pos = EEpos()
+            cmd_msg.desired_right_ee_pos.position = Float32MultiArray(data=self.main_state.desired_right_arm_position.tolist())
+            cmd_msg.desired_right_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_right_arm_quaternion.tolist())
+            cmd_msg.desired_left_ee_pos = EEpos()
+            cmd_msg.desired_left_ee_pos.position = Float32MultiArray(data=self.main_state.desired_left_arm_position.tolist())
+            cmd_msg.desired_left_ee_pos.quaternion = Float32MultiArray(data=self.main_state.desired_left_arm_quaternion.tolist())
+                
+        cmd_msg.desired_right_gripper_pos = command_data["right_gripper"]
+        cmd_msg.desired_left_gripper_pos = command_data["left_gripper"]
+        cmd_msg.is_active = True
+        cmd_msg.ready = self.ready
+        cmd_msg.move = self.move
+        cmd_msg.stop = self.stop
+            
+        self.stop = False
+        self.ready = False
+        
+        self.command_pub.publish(cmd_msg)
 
     def reset_state(self):
         self.main_state.desired_head_position = np.array([])
         self.main_state.desired_head_quaternion = np.array([])
-        self.main_state.desired_torso_position = np.array([])
-        self.main_state.desired_torso_quaternion = np.array([])
-        self.main_state.desired_right_arm_position = np.array([])
-        self.main_state.desired_right_arm_quaternion = np.array([])
-        self.main_state.desired_right_gripper_position = 0.0
-
-    def main_loop(self):
+        self.main_state.desired_torso_position = self.main_state.current_torso_position.copy()
+        self.main_state.desired_torso_quaternion = self.main_state.current_torso_quaternion.copy()
+        self.main_state.desired_right_arm_position = self.main_state.current_right_arm_position.copy()
+        self.main_state.desired_right_arm_quaternion = self.main_state.current_right_arm_quaternion.copy()
+        self.main_state.desired_right_gripper_position = self.main_state.current_right_gripper_position
+        self.main_state.desired_left_arm_position = self.main_state.current_left_arm_position.copy()
+        self.main_state.desired_left_arm_quaternion = self.main_state.current_left_arm_quaternion.copy()
+        self.main_state.desired_left_gripper_position = self.main_state.current_left_gripper_position
+        self.main_state.desired_joint_positions = self.main_state.current_joint_positions.copy()
+        self.main_state.desired_left_arm_angle = self.main_state.current_left_arm_angle.copy()
+        self.main_state.desired_right_arm_angle = self.main_state.current_right_arm_angle.copy()
+        self.action_history = []
+        self.state_history = []
+        
+    def save_history_plot_png(self):
+        if len(self.action_history) == 0 or len(self.state_history) == 0:
+            return
+        action_array = np.array(self.action_history)
+        state_array = np.array(self.state_history)
+        
+        plt.figure(figsize=(16, 3 * action_array.shape[1]))
+        
+        for i in range(action_array.shape[1]):
+            plt.subplot(action_array.shape[1], 1, i+1)
+            plt.plot(action_array[:, i], label=f'Action {i}')
+            plt.plot(state_array[:, i], label=f'State {i}', alpha=0.5)
+            plt.legend()
+            plt.xlabel('Time Step')
+            plt.ylabel('Value')
+            plt.grid()
+        
+        plt.tight_layout()
+        timestamp = int(time.time())
+        home_dir = str(Path.home())
+        filename = f'{home_dir}/action_state_history_{timestamp}.png'
+        plt.savefig(filename)
+        plt.close()
+        self.get_logger().info(f'Saved action/state history plot to {filename}')
+        
+        self.action_history = []
+        self.state_history = []
+        
+    def step(self):
         if self.main_state.is_robot_stopped:
             self.reset_state()
+            
+        try:
+            color1 = self.ensure_bgr(self.shm1.as_array().copy())
+            color2 = self.ensure_bgr(self.shm2.as_array().copy())
+        except Exception as e:
+            print("⚠️ Failed to read camera frames from SHM:", e)
+            time.sleep(0.05)
+            return
 
+        if color1 is None or color2 is None:
+            print("⚠️ Invalid camera frames. Skipping.")
+            time.sleep(0.05)
+            return
+        
+        concat_img = np.hstack([color1.copy(), color2.copy()])
+        cv2.imshow("CAM", concat_img)
+        
         key = cv2.waitKey(1) & 0xFF
         if key == ord('r'):
             self.get_logger().info('Received ready command')
@@ -135,6 +500,7 @@ class MainNode(Node):
         elif key == ord('f'):
             self.get_logger().info('Received move command')
             self.move = not self.move
+            self.reset_state()
         elif key == ord('g'):
             self.get_logger().info('Received stop command')
             self.stop = True
@@ -143,28 +509,60 @@ class MainNode(Node):
             cv2.destroyAllWindows()
             self.destroy_node()
             rclpy.shutdown()
-        elif key == ord('h'):
-            self.get_logger().info('Received record command')
-            self.record = not self.record
-            self.record_pub.publish(Bool(data=self.record))
+        
+        # state가 아직 없음
+        if self.main_state.is_robot_connected is False:
+            return
+        
+        if self.ready or self.stop:
+            self.publish_command({
+                "mode": "signal",
+            })
+            return
+        
+        if self.move is False:
+            if len(self.action_history) > 0 and len(self.state_history) > 0:
+                self.save_history_plot_png()
+            return
+        
+        if np.all(np.abs(self.main_state.current_joint_positions) < 1e-3):
+            print("⚠️ Robot joints nearly zero; likely initializing. Retrying shortly.")
+            time.sleep(0.05)
+            return
+        
+        try:
+            
+            if self.action_plan:
+                action = self.action_plan.popleft()
+                action_mode:str = action[0]
+                
+                arm = action_mode.split('_')[0]
+                mode = action_mode.split('_')[1]
+                self.publish_command({
+                    "mode": mode,
+                    "arm": arm,
+                    "action": action[1]
+                })
+                
+        except KeyboardInterrupt:
+            print("🛑 Interrupted (Ctrl+C)")
+        except Exception as e:
+            self.get_logger().error(f"Error in inference step: {e}")
+            self.cam1.stop()
+            self.cam2.stop()
+            cv2.destroyAllWindows()
+            self.destroy_node()
+            rclpy.shutdown()
+            return
+        
 
-        img = np.zeros((480, 640, 3), dtype=np.uint8)
-        cv2.putText(img, "'r' : Ready Pose", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(img, "'m' : Move Toggle", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(img, "'s' : Stop", (10, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(img, "'c' : Record Toggle", (10, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(img, "'q' : Quit", (10, 190), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-
-        status_text = f"Robot Connected: {self.main_state.is_robot_connected} | Initialized: {self.main_state.is_robot_initialized} | In Ready Pose: {self.main_state.is_robot_in_ready_pose}"
-        cv2.putText(img, status_text, (10, 230), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-        cv2.imshow("control", img)
-
-def main():
-    rclpy.init()
-    main_node = MainNode()
-    rclpy.spin(main_node)
-    main_node.destroy_node()
+def main(args=None):
+    rclpy.init(args=args)
+    node = MainNode()
+    rclpy.spin(node)
     rclpy.shutdown()
-
-if __name__ == '__main__':
+    
+    
+if __name__ == "__main__":
     main()
+        

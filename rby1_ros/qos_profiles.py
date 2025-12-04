@@ -39,10 +39,21 @@ qos_cmd = QoSProfile(
     durability=QoSDurabilityPolicy.VOLATILE,
 )
 
+# 5) image/sensor: 고대역폭 스트리밍 (카메라, 라이다 등)
+# 패킷 손실 시 재전송하지 않고 무시함(Best Effort) -> 지연(Latency) 최소화 및 대역폭 절약
+# Rviz2 등에서 볼 때도 'Unreliable' 설정과 호환됨
+qos_image_stream = QoSProfile(
+    history=QoSHistoryPolicy.KEEP_LAST,
+    depth=1, # 항상 최신 프레임 1장만 유지
+    reliability=QoSReliabilityPolicy.BEST_EFFORT, 
+    durability=QoSDurabilityPolicy.VOLATILE,
+)
+
 __all__ = [
     "qos_ctrl_latched",
     "qos_latched",
     "qos_tick",
     "qos_state_latest",
     "qos_cmd",
+    "qos_image_stream",
 ]

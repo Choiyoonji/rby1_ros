@@ -44,6 +44,8 @@ setup(
             'visualize = rby1_ros.visualize:main',
             'main_node_inference = rby1_ros.main_node_inference:main',
             'main_node_gr00t = rby1_ros.main_node_gr00t:main',
+            'rby1_control_command = rby1_ros.rby1_impedance_control_command:main',
+            'move_command = rby1_ros.move_command:main',
         ],
     },
 )
