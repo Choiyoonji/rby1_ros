@@ -56,6 +56,8 @@ class Settings:
     right_arm_start_position = np.array([0.0, -0.5, 0.0, -1.5, 0.0, 0.0])
     left_arm_start_position = np.array([0.0, 0.5, 0.0, -1.5, 0.0, 0.0])
 
+    collision_detection_threshold: float = 0.005  # in meters
+
 
 class SystemContext:
     robot_model: Union[rby.Model_A, rby.Model_M] = None
@@ -79,6 +81,14 @@ def robot_state_callback(robot_state: rby.RobotState_A):
     SystemContext.rby1_state.left_torque_sensor = robot_state.ft_sensor_left.torque
 
     SystemContext.rby1_state.center_of_mass = robot_state.center_of_mass
+
+    if robot_state.collisions:
+        collision = robot_state.collisions[0]
+        if collision.distance < Settings.collision_detection_threshold:
+            print(">>>>> Collision detected!")
+            SystemContext.rby1_state.collision_detected = True
+        else:
+            SystemContext.rby1_state.collision_detected = False
 
     if rby1_node is not None:
         rby1_node.publish_state()
@@ -381,6 +391,14 @@ class RBY1Node(Node):
         return True
 
     def run(self):
+        if SystemContext.rby1_state.collision_detected:
+            self.get_logger().warning("Collision detected! Stopping the robot.")
+            if self.stream is not None:
+                self.get_logger().info("Stream cancelled due to signal handling.")
+                self.stream.cancel()
+                self.stream = None
+            return
+        
         if not SystemContext.rby1_state.is_robot_connected:
             self.get_logger().warning("Robot not connected yet.")
             return

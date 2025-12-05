@@ -124,15 +124,18 @@ class MainNode(Node):
         
         self.action_map = {
             "image": [self.publish_images],
-            "left_joint": [self.calc_joint_traj, "dtheta", ["desired_left_arm_angle"]],
-            "right_joint": [self.calc_joint_traj, "dtheta", ["desired_right_arm_angle"]],
-            "both_joint": [self.calc_joint_traj, "dtheta", ["desired_right_arm_angle", "desired_left_arm_angle"]],
-            "left_pos": [self.calc_ee_pos_traj, "dpos", ["desired_left_arm_position"]],
-            "right_pos": [self.calc_ee_pos_traj, "dpos", ["desired_right_arm_position"]],
-            "both_pos": [self.calc_ee_pos_traj, "dpos", ["desired_right_arm_position", "desired_left_arm_position"]],
-            "left_rot": [self.calc_ee_rot_traj, "drot", ["desired_left_arm_quaternion"]],
-            "right_rot": [self.calc_ee_rot_traj, "drot", ["desired_right_arm_quaternion"]],
-            "both_rot": [self.calc_ee_rot_traj, "drot", ["desired_right_arm_quaternion", "desired_left_arm_quaternion"]],
+            "left_joint": [self.calc_joint_traj, "dtheta", ["left_arm_angle"]],
+            "right_joint": [self.calc_joint_traj, "dtheta", ["right_arm_angle"]],
+            "both_joint": [self.calc_joint_traj, "dtheta", ["right_arm_angle", "left_arm_angle"]],
+            "left_pos": [self.calc_ee_pos_traj, "dpos", ["left_arm_position"]],
+            "right_pos": [self.calc_ee_pos_traj, "dpos", ["right_arm_position"]],
+            "both_pos": [self.calc_ee_pos_traj, "dpos", ["right_arm_position", "left_arm_position"]],
+            "left_rot_local": [self.calc_ee_rot_traj, "drot", ["left_arm_quaternion"]],
+            "right_rot_local": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion"]],
+            "both_rot_local": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion", "left_arm_quaternion"]],
+            "left_rot_global": [self.calc_ee_rot_traj, "drot", ["left_arm_quaternion"]],
+            "right_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion"]],
+            "both_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion", "left_arm_quaternion"]],
             "left_gripper_open": [self.set_gripper_position, "left", [1.0]],
             "right_gripper_open": [self.set_gripper_position, "right", [1.0]],
             "left_gripper_close": [self.set_gripper_position, "left", [0.0]],
@@ -221,7 +224,7 @@ class MainNode(Node):
             self.get_logger().error(f'Unknown action mode: {msg.mode}')
             return
         
-        # [수정] 대기 중인 action이 없다면, 실제 로봇 현재 상태부터 시작하도록 캐시 초기화
+        # 대기 중인 action이 없다면, 실제 로봇 현재 상태부터 시작하도록 캐시 초기화
         # if len(self.action_plan) == 0:
         #     self.last_planned_state.clear()
 
@@ -249,18 +252,29 @@ class MainNode(Node):
         if action_arg2_names:
             action_arg2 = []
             for name in action_arg2_names:
-                # [수정] 계획된 마지막 상태가 있으면 그것을 사용, 없으면 현재 센서 값 사용
-                if name in self.last_planned_state:
-                    val = self.last_planned_state[name]
+                if len(self.action_plan) == 0 or msg.cancel_last_action:
+                    # 계획된 궤적이 없거나, 마지막 계획 취소 요청 시 현재 상태 사용
+                    self.action_plan.clear()  # 계획 취소
+                    val = getattr(self.main_state, "current_" + name)
                 else:
-                    val = getattr(self.main_state, name)
+                    name = "desired_" + name
+                    # [수정] 계획된 마지막 상태가 있으면 그것을 사용, 없으면 현재 센서 값 사용
+                    if name in self.last_planned_state:
+                        val = self.last_planned_state[name]
+                    else:
+                        val = getattr(self.main_state, name)
                 action_arg2.extend(val if isinstance(val, list) else val.tolist() if hasattr(val, 'tolist') else [val])
             
             # numpy array로 변환 (필요시)
             action_arg2 = np.array(action_arg2)
 
         # 궤적 계산
-        _traj = action_func(action_arg2, action_arg1)
+        if msg.mode in ["left_rot_global", "right_rot_global", "both_rot_global"]:
+            _traj = action_func(action_arg2, action_arg1, type='global')
+        elif msg.mode in ["left_rot_local", "right_rot_local", "both_rot_local"]:
+            _traj = action_func(action_arg2, action_arg1, type='local')
+        else:
+            _traj = action_func(action_arg2, action_arg1)
         
         if _traj is None or len(_traj) == 0:
             return
@@ -278,8 +292,8 @@ class MainNode(Node):
         
         # "both" 모드일 경우 데이터를 쪼개서 저장해야 함
         if len(action_arg2_names) == 2:  # 예: ["current_right_...", "current_left_..."]
-            name_right = action_arg2_names[0]
-            name_left = action_arg2_names[1]
+            name_right = "desired_" + action_arg2_names[0]
+            name_left = "desired_" + action_arg2_names[1]
             
             # 데이터 길이에 따라 분할 (Joint: 7, Pos: 3, Rot(Quat): 4)
             mid_idx = len(last_point) // 2
@@ -287,7 +301,7 @@ class MainNode(Node):
             self.last_planned_state[name_left] = last_point[mid_idx:]
             
         elif len(action_arg2_names) == 1: # 단일 팔 제어
-            name = action_arg2_names[0]
+            name = "desired_" + action_arg2_names[0]
             self.last_planned_state[name] = last_point
         
         print(f"Updated last planned state: {self.last_planned_state}")
@@ -317,7 +331,7 @@ class MainNode(Node):
         traj = self.pos_traj.plan_move_ee(last_pos, dpos)
         return traj
         
-    def calc_ee_rot_traj(self, last_quat, drot):
+    def calc_ee_rot_traj(self, last_quat, drot, type='local'):
         if len(drot) > 3:
             drot_right = drot[:3]
             drot_left = drot[3:]
@@ -331,8 +345,8 @@ class MainNode(Node):
             axis_right = ['x', 'y', 'z'][axis_right]
             axis_left = ['x', 'y', 'z'][axis_left]
             
-            traj_right = self.rot_traj.plan_rotate_ee(last_quat[:4], axis_right, drot_right, type='local')
-            traj_left = self.rot_traj.plan_rotate_ee(last_quat[4:], axis_left, drot_left, type='local')
+            traj_right = self.rot_traj.plan_rotate_ee(last_quat[:4], axis_right, drot_right, type=type)
+            traj_left = self.rot_traj.plan_rotate_ee(last_quat[4:], axis_left, drot_left, type=type)
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
@@ -342,8 +356,8 @@ class MainNode(Node):
         drot = drot[axis]
         axis = ['x', 'y', 'z'][axis]
         print(f"Rotating around axis: {axis} by {drot} degrees")
-        
-        traj = self.rot_traj.plan_rotate_ee(last_quat, axis, drot, type='local')
+
+        traj = self.rot_traj.plan_rotate_ee(last_quat, axis, drot, type=type)
         return traj
     
     def publish_images(self):
