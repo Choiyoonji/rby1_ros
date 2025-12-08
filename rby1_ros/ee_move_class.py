@@ -3,53 +3,7 @@ import numpy as np
 from typing import List, Tuple, Union
 import time
 from matplotlib import pyplot as plt
-
-
-# ============Utils===============
-def normalize_quat(q):
-    norm = np.linalg.norm(q)
-    if norm < 1e-9:
-        return q 
-    return q / norm
-
-def conjugation(q):
-    return np.array([q[0], -q[1], -q[2], -q[3]])
-
-def inverse_quat(q):
-    q_norm = np.linalg.norm(q)
-    q_inverse = conjugation(q) / (q_norm ** 2 + 1e-7)
-    return q_inverse
-
-def mul_quat(q1,q2):
-    w1, x1, y1, z1 = q1[0], q1[1], q1[2], q1[3]
-    w2, x2, y2, z2 = q2[0], q2[1], q2[2], q2[3]
-
-    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
-    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
-    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
-    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
-
-    mul = np.array([w, x, y, z])
-    
-    return mul
-
-def quat_diff(q1, q2):
-    """q1, q2: shape (..., 4), wxyz 순서"""
-
-    q_rel = mul_quat(inverse_quat(q1), q2)
-    return q_rel
-
-def Quat2Rot(quat):
-    q_w, q_x, q_y, q_z = quat[0], quat[1], quat[2], quat[3]
-
-    # 회전 행렬 계산
-    R = np.array([
-        [1 - 2*(q_y**2 + q_z**2), 2*(q_x*q_y - q_z*q_w), 2*(q_x*q_z + q_y*q_w)],
-        [2*(q_x*q_y + q_z*q_w), 1 - 2*(q_x**2 + q_z**2), 2*(q_y*q_z - q_x*q_w)],
-        [2*(q_x*q_z - q_y*q_w), 2*(q_y*q_z + q_x*q_w), 1 - 2*(q_x**2 + q_y**2)]
-    ])
-    return R
-# ================================
+from utils import mul_quat, quat_diff, normalize_quat
 
 class Move_ee:
     def __init__(self, Hz=100, duration=2.0, dist_step=0.01):
