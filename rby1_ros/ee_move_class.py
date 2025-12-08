@@ -5,6 +5,12 @@ import time
 from matplotlib import pyplot as plt
 
 # ============Utils===============
+def normalize_quat(q):
+    norm = np.linalg.norm(q)
+    if norm < 1e-9:
+        return q 
+    return q / norm
+
 def conjugation(q):
     return np.array([q[0], -q[1], -q[2], -q[3]])
 
@@ -178,7 +184,7 @@ class Rotate_ee:
                                              axis[2] * np.sin(limited_theta / 2.0)])
                 quat = mul_quat(prev_quat, limited_quat_diff)
             prev_quat = quat.copy()
-            self.plan_desired_ee_quat.append(quat)
+            self.plan_desired_ee_quat.append(normalize_quat(quat))
         
         self.is_done = False
         return self.plan_desired_ee_quat
