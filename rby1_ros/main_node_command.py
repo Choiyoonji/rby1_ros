@@ -110,7 +110,7 @@ class MainNode(Node):
         
         self.shm1, self.shm2 = self.open_all_shm()
         
-        self.step_hz = 30.0
+        self.step_hz = 30
         self.step_timer = self.create_timer(1/self.step_hz, self.step)
         
         self.pos_traj = Move_ee(Hz=self.step_hz, duration=0.3)
@@ -321,14 +321,14 @@ class MainNode(Node):
         if len(dpos) > 3:
             dpos_right = dpos[:3]
             dpos_left = dpos[3:]
-            traj_right = self.pos_traj.plan_move_ee(last_pos[:3], dpos_right)
-            traj_left = self.pos_traj.plan_move_ee(last_pos[3:], dpos_left)
+            traj_right = self.pos_traj.plan_move_ee(last_pos[:3], dpos_right, True)
+            traj_left = self.pos_traj.plan_move_ee(last_pos[3:], dpos_left, True)
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
             return traj
-        
-        traj = self.pos_traj.plan_move_ee(last_pos, dpos)
+
+        traj = self.pos_traj.plan_move_ee(last_pos, dpos, True)
         return traj
         
     def calc_ee_rot_traj(self, last_quat, drot, type='local'):
@@ -344,9 +344,9 @@ class MainNode(Node):
             
             axis_right = ['x', 'y', 'z'][axis_right]
             axis_left = ['x', 'y', 'z'][axis_left]
-            
-            traj_right = self.rot_traj.plan_rotate_ee(last_quat[:4], axis_right, drot_right, type=type)
-            traj_left = self.rot_traj.plan_rotate_ee(last_quat[4:], axis_left, drot_left, type=type)
+
+            traj_right = self.rot_traj.plan_rotate_ee(last_quat[:4], axis_right, drot_right, type=type, calc_duration=True)
+            traj_left = self.rot_traj.plan_rotate_ee(last_quat[4:], axis_left, drot_left, type=type, calc_duration=True)
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
@@ -357,7 +357,7 @@ class MainNode(Node):
         axis = ['x', 'y', 'z'][axis]
         print(f"Rotating around axis: {axis} by {drot} degrees")
 
-        traj = self.rot_traj.plan_rotate_ee(last_quat, axis, drot, type=type)
+        traj = self.rot_traj.plan_rotate_ee(last_quat, axis, drot, type=type, calc_duration=True)
         return traj
     
     def publish_images(self):
@@ -378,9 +378,9 @@ class MainNode(Node):
             msg2.header.frame_id = "camera_wrist"
             
             # 전송
-            self.pub_main.publish(msg1)
-            self.pub_wrist.publish(msg2)
-            
+            self.external_img_pub.publish(msg1)
+            self.wrist_img_pub.publish(msg2)
+
         except Exception as e:
             self.get_logger().error(f"Error publishing: {e}")
         
