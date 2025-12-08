@@ -58,7 +58,9 @@ class Move_ee:
         
         self.is_done = False
     
-    def plan_move_ee(self, start_ee_pos:List|np.ndarray, delta_ee_pos:List|np.ndarray):
+    def plan_move_ee(self, start_ee_pos:List|np.ndarray, delta_ee_pos:List|np.ndarray, duration:float=None):
+        if duration is not None:
+            self.duration = duration
         self.trajectory_ee = Trajectory(0.0, self.duration)
         init_state = np.array(start_ee_pos)
         final_state = init_state + np.array(delta_ee_pos)
