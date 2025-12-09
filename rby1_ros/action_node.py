@@ -56,6 +56,9 @@ class ActionNode(Node):
 
         self.bridge = CvBridge()
 
+        self.wrist_image = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.external_image = np.zeros((480, 640, 3), dtype=np.uint8)
+
         self.mode_list: list[str] = [
             "image",
             "left_pos",
@@ -72,6 +75,9 @@ class ActionNode(Node):
             "left_hand",
             "right_hand"
         ]
+
+        self.loop_timer = self.create_timer(0.02, self.loop_callback)
+        self.is_action_done: bool = True
 
     # ----- /rby1/state 콜백 -----
     def state_callback(self, msg: State):
@@ -97,19 +103,20 @@ class ActionNode(Node):
 
     def wrist_image_callback(self, msg):
         # 이미지 메시지를 OpenCV 이미지로 변환
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self.wrist_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         # 이미지 처리 로직 추가 가능
-        self.get_logger().info('Received wrist image of size: {}x{}'.format(cv_image.shape[1], cv_image.shape[0]))
+        self.get_logger().info('Received wrist image of size: {}x{}'.format(self.wrist_image.shape[1], self.wrist_image.shape[0]))
 
     def external_image_callback(self, msg):
         # 이미지 메시지를 OpenCV 이미지로 변환
-        cv_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
+        self.external_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         # 이미지 처리 로직 추가 가능
-        self.get_logger().info('Received external image of size: {}x{}'.format(cv_image.shape[1], cv_image.shape[0]))
+        self.get_logger().info('Received external image of size: {}x{}'.format(self.external_image.shape[1], self.external_image.shape[0]))
 
     def done_callback(self, msg):
         if msg.data:
             self.get_logger().info('Received done signal from action executor.')
+            self.is_action_done = True
 
     def publish_action(self, mode, arm=None, param_name=None, param=None):
         if mode not in self.mode_list:
@@ -125,11 +132,11 @@ class ActionNode(Node):
     def request_image(self):
         self.publish_action(mode="image")
 
-    def move_ee_delta_pos(self, arm, delta_pos):
+    def move_ee_delta_pos(self, arm, delta_pos:list[float]):
         mode = f"{arm}_pos" if arm in ["left", "right"] else "both_pos"
         self.publish_action(mode=mode, arm=arm, param_name="delta_pos", param=delta_pos)
 
-    def move_ee_delta_rot(self, arm, delta_rot, axis, type="global"):
+    def move_ee_delta_rot(self, arm, delta_rot, axis='z', type="global"):
         mode = f"{arm}_rot_{type}" if arm in ["left", "right"] else f"both_rot_{type}"
         rot_vec = np.zeros(3)
         if axis == 'x':
@@ -166,3 +173,88 @@ class ActionNode(Node):
 
     def left_hand_set_position(self, position):
         self.publish_action(mode="left_hand", param_name="left_hand_pos", param=position)
+
+    def draw_ui(self, image):
+        h, w = image.shape[:2]
+        
+        # 상태 표시 (Ready / Busy)
+        if self.is_action_done:
+            state_text = "[READY]"
+            color = (0, 255, 0)
+        else:
+            state_text = "[BUSY...]"
+            color = (0, 0, 255)
+            
+        cv2.putText(image, state_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, color, 2)
+        
+        # 마지막 상태 메시지
+        state_text = "Status: " + ("executing" if not self.is_action_done else "idle")
+        cv2.putText(image, state_text, (10, 60), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1)
+
+        # 가이드
+        guide = "'o':Open, 'c':Close, 'm':Move, 'q':Quit"
+        cv2.putText(image, guide, (10, h - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+
+    def loop_callback(self):
+        display_image = cv2.hconcat([self.wrist_image.copy(), self.external_image.copy()])
+        self.draw_ui(display_image)
+        cv2.imshow("RBY1 Camera Views (Wrist | External)", display_image)
+        
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord('q'):
+            self.get_logger().info("Quit signal received.")
+            # ROS 종료 예외 발생시켜 Spin을 멈춤
+            raise SystemExit 
+        
+        elif key == ord('o') and self.is_action_done:
+            self.right_gripper_open()
+            self.get_logger().info("Opening Gripper")
+        
+        elif key == ord('c') and self.is_action_done:
+            self.right_gripper_close()
+            self.get_logger().info("Closing Gripper")
+
+        elif key == ord('w') and self.is_action_done:
+            self.move_ee_delta_pos("right", [0.05, 0.0, 0.0])
+
+        elif key == ord('s') and self.is_action_done:
+            self.move_ee_delta_pos("right", [-0.05, 0.0, 0.0])
+
+        elif key == ord('a') and self.is_action_done:
+            self.move_ee_delta_pos("right", [0.0, 0.05, 0.0])
+
+        elif key == ord('d') and self.is_action_done:
+            self.move_ee_delta_pos("right", [0.0, -0.05, 0.0])
+
+        elif key == ord('+') and self.is_action_done:
+            self.move_ee_delta_pos("right", [0.0, 0.0, 0.05])
+
+        elif key == ord('-') and self.is_action_done:
+            self.move_ee_delta_pos("right", [0.0, 0.0, -0.05])
+
+        elif key == ord('l') and self.is_action_done:
+            self.move_ee_delta_rot("right", 10.0, axis='z', type="local")
+
+        elif key == ord('j') and self.is_action_done:
+            self.move_ee_delta_rot("right", -10.0, axis='z', type="local")
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = ActionNode()
+
+    try:
+        rclpy.spin(node)
+    except SystemExit:
+        print("Closing application...")
+    except KeyboardInterrupt:
+        print("Keyboard Interrupt.")
+    finally:
+        cv2.destroyAllWindows()
+        node.destroy_node()
+        rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
