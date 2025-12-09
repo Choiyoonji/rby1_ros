@@ -11,7 +11,7 @@ CONTROLLED_LINK = 'link_right_arm_6'
 
 JOINT_INDEX = range(8, 15)  # 로봇의 관절 인덱스 설정 (예: 8~14번 관절)
 
-TOOL_OFFSET = [0.0, 0.0, 0.15]  # 툴 오프셋 설정 (예: 그리퍼 길이)
+TOOL_OFFSET = [0.0, 0.0, -0.15]  # 툴 오프셋 설정 (예: 그리퍼 길이)
 
 T_TOOL_OFFSET = np.eye(4)
 T_TOOL_OFFSET[0:3, 3] = TOOL_OFFSET

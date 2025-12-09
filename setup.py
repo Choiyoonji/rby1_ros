@@ -48,6 +48,8 @@ setup(
             'move_command = rby1_ros.move_command:main',
             'dummy_rby1_node = rby1_ros.rby1_dummy_node:main',
             'main_node_command = rby1_ros.main_node_command:main',
+            'action_node = rby1_ros.action_node:main',
+            'hand_node = rby1_ros.hand_node:main',
         ],
     },
 )

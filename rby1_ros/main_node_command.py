@@ -17,7 +17,6 @@ from cv_bridge import CvBridge
 import collections
 from pathlib import Path
 from rby1_ros.main_status import MainStatus as MainState
-from rby1_ros.rby1_dyn import RBY1Dyn
 from rby1_ros.utils import *
 
 from .cam_utils.shm_util import NamedSharedNDArray
@@ -288,8 +287,8 @@ class MainNode(Node):
             _traj = action_func(action_arg2, action_arg1, type='global')
         elif msg.mode in ["left_rot_local", "right_rot_local", "both_rot_local"]:
             _traj = action_func(action_arg2, action_arg1, type='local')
-        else:
-            _traj = action_func(action_arg2, action_arg1)
+        elif 'pos' in msg.mode:
+            _traj = action_func(action_arg2, action_arg1, msg.mode.split('_')[0])  # 'left', 'right', 'both' 전달
         
         if _traj is None or len(_traj) == 0:
             return
@@ -341,18 +340,18 @@ class MainNode(Node):
     def calc_joint_traj(self, current_angle, dtheta):
         pass
         
-    def calc_ee_pos_traj(self, last_pos, dpos):
+    def calc_ee_pos_traj(self, last_pos, dpos, arm='right'):
         if len(dpos) > 3:
             dpos_right = dpos[:3]
             dpos_left = dpos[3:]
-            traj_right = self.pos_traj.plan_move_ee(last_pos[:3], dpos_right, True)
-            traj_left = self.pos_traj.plan_move_ee(last_pos[3:], dpos_left, True)
+            traj_right = self.pos_traj.plan_move_ee('right', last_pos[:3], dpos_right, True)
+            traj_left = self.pos_traj.plan_move_ee('left', last_pos[3:], dpos_left, True)
             traj = []
             for t_right, t_left in zip(traj_right, traj_left):
                 traj.append(np.concatenate([t_right, t_left]))
             return traj
 
-        traj = self.pos_traj.plan_move_ee(last_pos, dpos, True)
+        traj = self.pos_traj.plan_move_ee(arm,last_pos, dpos, True)
         return traj
         
     def calc_ee_rot_traj(self, last_quat, drot, type='local'):

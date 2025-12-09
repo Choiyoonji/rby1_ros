@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command, Action
+from rby1_interfaces.msg import EEpos, FTsensor, State, Action
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
@@ -29,7 +29,7 @@ class ActionNode(Node):
 
         self.action_pub = self.create_publisher(
             Action,
-            '/control/action/rby1',
+            '/control/action',
             qos_cmd
         )
 
@@ -106,35 +106,38 @@ class ActionNode(Node):
         self.wrist_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         # 이미지 처리 로직 추가 가능
         self.get_logger().info('Received wrist image of size: {}x{}'.format(self.wrist_image.shape[1], self.wrist_image.shape[0]))
+        self.is_action_done = True
 
     def external_image_callback(self, msg):
         # 이미지 메시지를 OpenCV 이미지로 변환
         self.external_image = self.bridge.imgmsg_to_cv2(msg, desired_encoding='bgr8')
         # 이미지 처리 로직 추가 가능
         self.get_logger().info('Received external image of size: {}x{}'.format(self.external_image.shape[1], self.external_image.shape[0]))
+        self.is_action_done = True
 
     def done_callback(self, msg):
         if msg.data:
             self.get_logger().info('Received done signal from action executor.')
             self.is_action_done = True
 
-    def publish_action(self, mode, arm=None, param_name=None, param=None):
+    def publish_action(self, mode, param_name=None, param=None):
         if mode not in self.mode_list:
             self.get_logger().error('Invalid mode: {}'.format(mode))
             return
         action_msg = Action()
         action_msg.mode = mode
-        if arm is not None:
-            action_msg.arm = arm
         if param_name is not None and param is not None:
-            action_msg.params[param_name] = param
+            setattr(action_msg, param_name, Float32MultiArray(data=param) if isinstance(param, list) else param)
+            
+        self.action_pub.publish(action_msg)
+        self.is_action_done = False
 
     def request_image(self):
         self.publish_action(mode="image")
 
     def move_ee_delta_pos(self, arm, delta_pos:list[float]):
         mode = f"{arm}_pos" if arm in ["left", "right"] else "both_pos"
-        self.publish_action(mode=mode, arm=arm, param_name="delta_pos", param=delta_pos)
+        self.publish_action(mode=mode, param_name="dpos", param=delta_pos)
 
     def move_ee_delta_rot(self, arm, delta_rot, axis='z', type="global"):
         mode = f"{arm}_rot_{type}" if arm in ["left", "right"] else f"both_rot_{type}"
@@ -148,7 +151,7 @@ class ActionNode(Node):
         else:
             self.get_logger().error('Invalid axis: {}'.format(axis))
             return
-        self.publish_action(mode=mode, arm=arm, param_name="delta_rot", param=rot_vec)
+        self.publish_action(mode=mode, param_name="drot", param=list(rot_vec))
 
     def right_gripper_open(self):
         self.publish_action(mode="right_gripper", param_name="right_gripper_pos", param=1.0)
@@ -206,7 +209,11 @@ class ActionNode(Node):
         if key == ord('q'):
             self.get_logger().info("Quit signal received.")
             # ROS 종료 예외 발생시켜 Spin을 멈춤
-            raise SystemExit 
+            raise SystemExit
+        
+        elif key == ord('i'):
+            self.request_image()
+            self.get_logger().info("Requesting Images from Cameras")
         
         elif key == ord('o') and self.is_action_done:
             self.right_gripper_open()
@@ -217,29 +224,27 @@ class ActionNode(Node):
             self.get_logger().info("Closing Gripper")
 
         elif key == ord('w') and self.is_action_done:
-            self.move_ee_delta_pos("right", [0.05, 0.0, 0.0])
+            self.move_ee_delta_pos("right", [0.10, 0.0, 0.0])
 
         elif key == ord('s') and self.is_action_done:
-            self.move_ee_delta_pos("right", [-0.05, 0.0, 0.0])
+            self.move_ee_delta_pos("right", [-0.10, 0.0, 0.0])
 
         elif key == ord('a') and self.is_action_done:
-            self.move_ee_delta_pos("right", [0.0, 0.05, 0.0])
-
+            self.move_ee_delta_pos("right", [0.0, 0.10, 0.0])
         elif key == ord('d') and self.is_action_done:
-            self.move_ee_delta_pos("right", [0.0, -0.05, 0.0])
+            self.move_ee_delta_pos("right", [0.0, -0.10, 0.0])
 
         elif key == ord('+') and self.is_action_done:
-            self.move_ee_delta_pos("right", [0.0, 0.0, 0.05])
+            self.move_ee_delta_pos("right", [0.0, 0.0, 0.10])
 
         elif key == ord('-') and self.is_action_done:
-            self.move_ee_delta_pos("right", [0.0, 0.0, -0.05])
+            self.move_ee_delta_pos("right", [0.0, 0.0, -0.10])
 
         elif key == ord('l') and self.is_action_done:
-            self.move_ee_delta_rot("right", 10.0, axis='z', type="local")
+            self.move_ee_delta_rot("right", 30.0, axis='x', type="global")
 
         elif key == ord('j') and self.is_action_done:
-            self.move_ee_delta_rot("right", -10.0, axis='z', type="local")
-
+            self.move_ee_delta_rot("right", -30.0, axis='x', type="global")
 
 def main(args=None):
     rclpy.init(args=args)
