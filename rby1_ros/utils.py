@@ -10,7 +10,7 @@ from typing import Tuple, List, Union, Dict
 def normalize_quat(q: np.ndarray) -> np.ndarray:
     norm = np.linalg.norm(q)
     if norm < 1e-9:
-        return q 
+        return q
     return q / norm
 
 def conjugation(q: np.ndarray) -> np.ndarray:

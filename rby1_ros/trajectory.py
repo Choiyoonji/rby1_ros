@@ -5,20 +5,20 @@ from scipy.spatial.transform import Rotation as R
 # from matplotlib import pyplot as plt
 
 def mul_quat(q1,q2):
-    w1, x1, y1, z1 = q1[0], q1[1], q1[2], q1[3]
-    w2, x2, y2, z2 = q2[0], q2[1], q2[2], q2[3]
+    x1, y1, z1, w1 = q1[0], q1[1], q1[2], q1[3]
+    x2, y2, z2, w2 = q2[0], q2[1], q2[2], q2[3]
 
     w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
     x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
     y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
     z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
 
-    mul = np.array([w, x, y, z])
+    mul = np.array([x, y, z, w])
     
     return mul
 
 def conjugation(q):
-    return np.array([q[0], -q[1], -q[2], -q[3]])
+    return np.array([ -q[1], -q[2], -q[3], q[0]])
 
 def inverse_quat(q):
     q_norm = np.linalg.norm(q)
@@ -90,7 +90,9 @@ class Trajectory:
             self.coeff_quat = np.linalg.inv(mat) @ target    # 6x4 matrix
             self.excuted_quat_once = True
 
-    def calculate_pva_quat(self, current_time):   # calculate pose, velocity, acceleration
+    def calculate_pva_quat(self, current_time): 
+        current_time = current_time
+        # calculate pose, velocity, acceleration
         if current_time <= self.final_time:
             pva = self.time_mat(current_time) @ self.coeff_quat    # 3x4 matrix 
         else:
