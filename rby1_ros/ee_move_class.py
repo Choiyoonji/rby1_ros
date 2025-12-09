@@ -210,19 +210,14 @@ class Rotate_ee:
             
             if theta_diff > np.deg2rad(self.degree_step):
                 vec_part = quat_rel[0:3]
-                norm_vec = np.linalg.norm(vec_part)
-                if norm_vec < 1e-7:
-                    axis_vec = np.array([1.0, 0.0, 0.0])
-                else:
-                    axis_vec = vec_part / norm_vec
                 
                 limited_theta = np.deg2rad(self.degree_step)
                 half_limited = limited_theta / 2.0
                 
                 limited_quat_diff = np.array([
-                    axis_vec[0] * np.sin(half_limited),
-                    axis_vec[1] * np.sin(half_limited),
-                    axis_vec[2] * np.sin(half_limited),
+                    vec_part[0] * np.sin(half_limited),
+                    vec_part[1] * np.sin(half_limited),
+                    vec_part[2] * np.sin(half_limited),
                     np.cos(half_limited)
                 ])
                 quat = mul_quat_xyzw(prev_quat, limited_quat_diff)
