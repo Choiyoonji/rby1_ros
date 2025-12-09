@@ -29,7 +29,7 @@ class ActionNode(Node):
 
         self.action_pub = self.create_publisher(
             Action,
-            '/control/action',
+            '/control/action/rby1',
             qos_cmd
         )
 
@@ -68,7 +68,9 @@ class ActionNode(Node):
             "right_rot_global",
             "both_rot_global",
             "left_gripper",
-            "right_gripper"
+            "right_gripper",
+            "left_hand",
+            "right_hand"
         ]
 
     # ----- /rby1/state 콜백 -----
@@ -142,13 +144,25 @@ class ActionNode(Node):
         self.publish_action(mode=mode, arm=arm, param_name="delta_rot", param=rot_vec)
 
     def right_gripper_open(self):
-        self.publish_action(mode="right_gripper", param_name="command", param=True)
+        self.publish_action(mode="right_gripper", param_name="right_gripper_pos", param=1.0)
 
     def left_gripper_open(self):
-        self.publish_action(mode="left_gripper", param_name="command", param=True)
+        self.publish_action(mode="left_gripper", param_name="left_gripper_pos", param=1.0)
 
     def right_gripper_close(self):
-        self.publish_action(mode="right_gripper", param_name="command", param=False)
+        self.publish_action(mode="right_gripper", param_name="right_gripper_pos", param=0.0)
 
     def left_gripper_close(self):
-        self.publish_action(mode="left_gripper", param_name="command", param=False)
+        self.publish_action(mode="left_gripper", param_name="left_gripper_pos", param=0.0)
+
+    def right_gripper_set_position(self, position):
+        self.publish_action(mode="right_gripper", param_name="right_gripper_pos", param=position)
+
+    def left_gripper_set_position(self, position):
+        self.publish_action(mode="left_gripper", param_name="left_gripper_pos", param=position)
+
+    def right_hand_set_position(self, position):
+        self.publish_action(mode="right_hand", param_name="right_hand_pos", param=position)
+
+    def left_hand_set_position(self, position):
+        self.publish_action(mode="left_hand", param_name="left_hand_pos", param=position)
