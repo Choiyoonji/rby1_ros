@@ -35,7 +35,7 @@ class HandNodeCommand(Node):
         
         self.hand_cmd_sub = self.create_subscription(
             CommandHand,
-            '/control/action/hand',
+            '/control/command/hand',
             self.hand_command_callback,
             qos_cmd
         )
@@ -91,9 +91,9 @@ class HandNodeCommand(Node):
             self.get_logger().error(f'Unknown hand cmd: {msg.opening}')
             return
         
-        if msg.opening == 1:
+        if msg.opening >= 0.5:
             self.open_hand(msg.hand)
-        elif msg.opening == 0:
+        else:
             self.close_hand(msg.hand)
             
     def loop_step(self):
@@ -120,3 +120,14 @@ class HandNodeCommand(Node):
 
         except Exception as e:
             self.get_logger().error(f"Error in loop_step: {e}")
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    hand_node_command = HandNodeCommand()
+    rclpy.spin(hand_node_command)
+    hand_node_command.destroy_node()
+    rclpy.shutdown()
+
+if __name__ == '__main__':
+    main()
