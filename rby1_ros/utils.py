@@ -17,9 +17,17 @@ def conjugation(q: np.ndarray) -> np.ndarray:
     """Quaternion conjugation (w, -x, -y, -z)"""
     return np.array([q[0], -q[1], -q[2], -q[3]])
 
+def conjugation_xyzw(q: np.ndarray) -> np.ndarray:
+    """Quaternion conjugation (-x, -y, -z, w)"""
+    return np.array([-q[0], -q[1], -q[2], q[3]])
+
 def inverse_quat(q: np.ndarray) -> np.ndarray:
     q_norm = np.linalg.norm(q)
     return conjugation(q) / (q_norm ** 2 + 1e-7)
+
+def inverse_quat_xyzw(q: np.ndarray) -> np.ndarray:
+    q_norm = np.linalg.norm(q)
+    return conjugation_xyzw(q) / (q_norm ** 2 + 1e-7)
 
 def mul_quat(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """Quaternion multiplication. Assumes [w, x, y, z] order."""
@@ -33,9 +41,25 @@ def mul_quat(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     
     return np.array([w, x, y, z])
 
+def mul_quat_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    """Quaternion multiplication. Assumes [w, x, y, z] order."""
+    x1, y1, z1, w1 = q1
+    x2, y2, z2, w2 = q2
+
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    
+    return np.array([x, y, z, w])
+
 def quat_diff(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     """Computes relative rotation q_rel = q1^-1 * q2"""
     return mul_quat(inverse_quat(q1), q2)
+
+def quat_diff_xyzw(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    """Computes relative rotation q_rel = q1^-1 * q2"""
+    return mul_quat_xyzw(inverse_quat_xyzw(q1), q2)
 
 def quat_to_rotvec(q: np.ndarray) -> np.ndarray:
     """Converts quaternion [w, x, y, z] to rotation vector."""

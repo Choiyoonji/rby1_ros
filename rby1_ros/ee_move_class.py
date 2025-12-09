@@ -1,9 +1,9 @@
-from trajectory import Trajectory
+from .trajectory import Trajectory
 import numpy as np
 from typing import List, Tuple, Union
 import time
 from matplotlib import pyplot as plt
-from utils import mul_quat, quat_diff, normalize_quat
+from .utils import mul_quat_xyzw, mul_quat, quat_diff_xyzw, normalize_quat
 
 class Move_ee:
     def __init__(self, Hz=100, duration=2.0, dist_step=0.01):
@@ -27,8 +27,14 @@ class Move_ee:
         self.SPLINE_ACC_FACTOR = 5.774
 
         # TODO: get_bounding_box 코드로 범위 확인 후 설정
-        self.lower_bound = np.array([-np.inf, -np.inf, -np.inf])
-        self.upper_bound = np.array([np.inf, np.inf, np.inf])
+        self.lower_bound = {
+            'left': np.array([-0.5, -0.5, 0.0]),
+            'right': np.array([0.1024, -0.3392, 0.9598])
+        }
+        self.upper_bound = {
+            'left': np.array([np.inf, np.inf, np.inf]),
+            'right': np.array([0.5568, -0.1000, 1.4184])
+        }
 
     def calculate_required_duration(self, delta_ee_pos: np.ndarray) -> float:
         """이동 거리에 따른 최소 시간 계산"""
@@ -43,11 +49,11 @@ class Move_ee:
         req_time = max(t_vel, t_acc)
         return max(req_time, self.min_duration)
     
-    def clip_to_bounds(self, position: np.ndarray) -> np.ndarray:
+    def clip_to_bounds(self, arm, position: np.ndarray) -> np.ndarray:
         """주어진 위치를 설정된 경계 내로 클리핑"""
-        return np.minimum(np.maximum(position, self.lower_bound), self.upper_bound)
+        return np.minimum(np.maximum(position, self.lower_bound[arm]), self.upper_bound[arm])
 
-    def plan_move_ee(self, start_ee_pos: Union[List, np.ndarray], delta_ee_pos: Union[List, np.ndarray], calc_duration: bool = False):
+    def plan_move_ee(self, arm, start_ee_pos: Union[List, np.ndarray], delta_ee_pos: Union[List, np.ndarray], calc_duration: bool = False):
         init_state = np.array(start_ee_pos, dtype=float)
         delta_vec = np.array(delta_ee_pos, dtype=float)
         final_state = init_state + delta_vec
@@ -76,7 +82,7 @@ class Move_ee:
             if dist > self.dist_step:
                 pos = prev_pos + (pos - prev_pos) / dist * self.dist_step
 
-            pos = self.clip_to_bounds(pos)
+            pos = self.clip_to_bounds(arm, pos)
 
             prev_pos = pos.copy()
             self.plan_desired_ee_pos.append(pos)
@@ -148,11 +154,11 @@ class Rotate_ee:
         rad = np.deg2rad(degree)
         half_rad = rad / 2.0
         if axis == 'x':
-            delta_quat = np.array([np.cos(half_rad), np.sin(half_rad), 0.0, 0.0])
+            delta_quat = np.array([np.sin(half_rad), 0.0, 0.0, np.cos(half_rad)])
         elif axis == 'y':
-            delta_quat = np.array([np.cos(half_rad), 0.0, np.sin(half_rad), 0.0])
+            delta_quat = np.array([0.0, np.sin(half_rad), 0.0, np.cos(half_rad)])
         elif axis == 'z':
-            delta_quat = np.array([np.cos(half_rad), 0.0, 0.0, np.sin(half_rad)])
+            delta_quat = np.array([0.0, 0.0, np.sin(half_rad), np.cos(half_rad)])
         else:
             raise ValueError("Axis must be 'x', 'y', or 'z'")
         return delta_quat
@@ -184,9 +190,9 @@ class Rotate_ee:
         delta_ee_quat = self.delta_rot2delta_quat(axis, degree)
         
         if type == 'local':
-            final_state = mul_quat(init_state, np.array(delta_ee_quat))
+            final_state = mul_quat_xyzw(init_state, np.array(delta_ee_quat))
         elif type == 'global':
-            final_state = mul_quat(np.array(delta_ee_quat), init_state)
+            final_state = mul_quat_xyzw(np.array(delta_ee_quat), init_state)
         else:
             raise ValueError("Type must be 'local' or 'global'")
          
@@ -198,12 +204,12 @@ class Rotate_ee:
         for step in range(1, self.total_step + 1):
             current_time = step / self.Hz
             quat, quat_vel, quat_acc = self.trajectory_ee_quat.calculate_pva_quat(current_time)
-            quat_rel = quat_diff(prev_quat, quat)
-            w_val = np.clip(quat_rel[0], -1.0, 1.0)
+            quat_rel = quat_diff_xyzw(prev_quat, quat)
+            w_val = np.clip(quat_rel[3], -1.0, 1.0)
             theta_diff = 2.0 * np.arccos(w_val)
             
             if theta_diff > np.deg2rad(self.degree_step):
-                vec_part = quat_rel[1:4]
+                vec_part = quat_rel[0:3]
                 norm_vec = np.linalg.norm(vec_part)
                 if norm_vec < 1e-7:
                     axis_vec = np.array([1.0, 0.0, 0.0])
@@ -214,12 +220,12 @@ class Rotate_ee:
                 half_limited = limited_theta / 2.0
                 
                 limited_quat_diff = np.array([
-                    np.cos(half_limited),
                     axis_vec[0] * np.sin(half_limited),
                     axis_vec[1] * np.sin(half_limited),
-                    axis_vec[2] * np.sin(half_limited)
+                    axis_vec[2] * np.sin(half_limited),
+                    np.cos(half_limited)
                 ])
-                quat = mul_quat(prev_quat, limited_quat_diff)
+                quat = mul_quat_xyzw(prev_quat, limited_quat_diff)
             
             quat = normalize_quat(quat)
             prev_quat = quat.copy()
@@ -328,7 +334,7 @@ def main_rot():
     rot.v_max_ang = 0.785 
     print(f"--- [Rotation Test] Limits: Max Vel={rot.v_max_ang:.3f} rad/s ---")
 
-    start_ee_quat = np.array([1.0, 0.0, 0.0, 0.0]) # wxyz (Identity)
+    start_ee_quat = np.array([0.0, 0.0, 0.0, 1.0]) # wxyz (Identity)
     
     # 2. 회전 명령: 90도 회전
     # 제한 속도가 45도/초 이므로, 90도 회전에는 스플라인 고려 시 약 3~4초가 필요할 것임.
@@ -373,10 +379,10 @@ def main_rot():
     time_array = np.array(time_list)
 
     plt.figure(figsize=(10, 6))
-    plt.plot(time_array, quat_array[:, 0], label='w (cos)', linewidth=2)
-    plt.plot(time_array, quat_array[:, 1], label='x', linestyle='--')
-    plt.plot(time_array, quat_array[:, 2], label='y', linestyle='--')
-    plt.plot(time_array, quat_array[:, 3], label='z (sin)', linestyle='--')
+    plt.plot(time_array, quat_array[:, 3], label='w (cos)', linewidth=2)
+    plt.plot(time_array, quat_array[:, 0], label='x', linestyle='--')
+    plt.plot(time_array, quat_array[:, 1], label='y', linestyle='--')
+    plt.plot(time_array, quat_array[:, 2], label='z (sin)', linestyle='--')
     
     plt.xlabel('time [s]')
     plt.ylabel('Quaternion components')

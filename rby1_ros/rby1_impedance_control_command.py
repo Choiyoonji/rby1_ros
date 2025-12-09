@@ -3,7 +3,7 @@ import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import State, Command, EEpos, FTsensor
+from rby1_interfaces.msg import State, CommandRBY1, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd
 
 import numpy as np
@@ -33,7 +33,7 @@ class Settings:
     dt: float = 1/30.0  # 30 Hz
     initial_dt: float = 1.0  # 1 Hz
     update_dt : float = 0.01   # 100 Hz
-    hand_offset: np.ndarray = np.array([0.0, 0.0, 0.0])
+    hand_offset: np.ndarray = np.array([0.0, 0.0, -0.15])
 
     no_gripper : bool = True
     no_head : bool = True
@@ -99,8 +99,8 @@ class RBY1Node(Node):
         )
 
         self.control_sub = self.create_subscription(
-            Command,
-            '/control/command',
+            CommandRBY1,
+            '/control/command/rby1',
             self.control_callback,
             qos_cmd
         )
@@ -133,13 +133,13 @@ class RBY1Node(Node):
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_right_arm_6"]
-        )
+        ) @ self.settings.T_hand_offset
 
         SystemContext.rby1_state.left_ee_position = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_left_arm_6"]
-        )
+        ) @ self.settings.T_hand_offset
         
         SystemContext.rby1_state.torso_ee_position = self.dyn_robot.compute_transformation(
             self.dyn_state,
@@ -205,7 +205,7 @@ class RBY1Node(Node):
                 
         self.rby1_pub.publish(msg)
 
-    def control_callback(self, msg: Command):
+    def control_callback(self, msg: CommandRBY1):
         # self.get_logger().info(f"Received control command:")
         SystemContext.control_state.is_controller_connected = True
         SystemContext.control_state.is_active = msg.is_active
