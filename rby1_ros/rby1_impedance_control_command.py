@@ -548,7 +548,7 @@ class RBY1Node(Node):
                     rby.CartesianImpedanceControlCommandBuilder()
                     .set_command_header(rby.CommandHeaderBuilder().set_control_hold_time(self.settings.dt * 10))
                     .set_minimum_time(Settings.dt * 1.02)
-                    .set_joint_stiffness([80, 80, 80, 60, 60, 60, 60])
+                    .set_joint_stiffness([320, 320, 320, 200, 200, 200, 200])
                     .set_joint_torque_limit([40, 40, 40, 30, 30, 30, 30])
                     .add_joint_limit("right_arm_3", -2.6, -0.5)
                     # .add_joint_limit("right_arm_5", 0.2, 1.9)

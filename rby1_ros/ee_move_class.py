@@ -1,9 +1,9 @@
-from .trajectory import Trajectory
+from trajectory import Trajectory
 import numpy as np
 from typing import List, Tuple, Union
 import time
 from matplotlib import pyplot as plt
-from .utils import mul_quat_xyzw, mul_quat, quat_diff_xyzw, normalize_quat
+from utils import mul_quat_xyzw, mul_quat, quat_diff_xyzw, normalize_quat
 
 class Move_ee:
     def __init__(self, Hz=100, duration=2.0, dist_step=0.01):
@@ -29,11 +29,11 @@ class Move_ee:
         # TODO: get_bounding_box 코드로 범위 확인 후 설정
         self.lower_bound = {
             'left': np.array([-0.5, -0.5, 0.0]),
-            'right': np.array([0.1024, -0.3392, 0.9598])
+            'right': np.array([0.3181, -0.4482, 0.9010])
         }
         self.upper_bound = {
             'left': np.array([np.inf, np.inf, np.inf]),
-            'right': np.array([0.5568, -0.1000, 1.4184])
+            'right': np.array([0.4379, -0.1898, 1.2618])
         }
 
     def calculate_required_duration(self, delta_ee_pos: np.ndarray) -> float:
