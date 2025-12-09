@@ -124,7 +124,7 @@ class MainNode(Node):
         self.step_timer = self.create_timer(1/self.step_hz, self.step)
         
         self.pos_traj = Move_ee(Hz=self.step_hz, duration=0.3)
-        self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=0.3)
+        self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=5.0)
         
         self.action_history = []
         self.state_history = []

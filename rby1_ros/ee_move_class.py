@@ -1,9 +1,9 @@
-from trajectory import Trajectory
+from .trajectory import Trajectory
 import numpy as np
 from typing import List, Tuple, Union
 import time
 from matplotlib import pyplot as plt
-from utils import mul_quat_xyzw, mul_quat, quat_diff_xyzw, normalize_quat
+from .utils import mul_quat_xyzw, mul_quat, quat_diff_xyzw, normalize_quat
 
 class Move_ee:
     def __init__(self, Hz=100, duration=2.0, dist_step=0.01):
@@ -204,7 +204,7 @@ class Rotate_ee:
         for step in range(1, self.total_step + 1):
             current_time = step / self.Hz
             quat, quat_vel, quat_acc = self.trajectory_ee_quat.calculate_pva_quat(current_time)
-            quat_rel = quat_diff_xyzw(prev_quat, quat)
+            quat_rel = normalize_quat(quat_diff_xyzw(prev_quat, quat))
             w_val = np.clip(quat_rel[3], -1.0, 1.0)
             theta_diff = 2.0 * np.arccos(w_val)
             
