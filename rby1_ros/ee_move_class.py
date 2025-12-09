@@ -26,6 +26,10 @@ class Move_ee:
         self.SPLINE_VEL_FACTOR = 1.875
         self.SPLINE_ACC_FACTOR = 5.774
 
+        # TODO: get_bounding_box 코드로 범위 확인 후 설정
+        self.lower_bound = np.array([-np.inf, -np.inf, -np.inf])
+        self.upper_bound = np.array([np.inf, np.inf, np.inf])
+
     def calculate_required_duration(self, delta_ee_pos: np.ndarray) -> float:
         """이동 거리에 따른 최소 시간 계산"""
         distance = np.linalg.norm(delta_ee_pos)
@@ -38,6 +42,10 @@ class Move_ee:
         
         req_time = max(t_vel, t_acc)
         return max(req_time, self.min_duration)
+    
+    def clip_to_bounds(self, position: np.ndarray) -> np.ndarray:
+        """주어진 위치를 설정된 경계 내로 클리핑"""
+        return np.minimum(np.maximum(position, self.lower_bound), self.upper_bound)
 
     def plan_move_ee(self, start_ee_pos: Union[List, np.ndarray], delta_ee_pos: Union[List, np.ndarray], calc_duration: bool = False):
         init_state = np.array(start_ee_pos, dtype=float)
@@ -67,7 +75,9 @@ class Move_ee:
             dist = np.linalg.norm(pos - prev_pos)
             if dist > self.dist_step:
                 pos = prev_pos + (pos - prev_pos) / dist * self.dist_step
-            
+
+            pos = self.clip_to_bounds(pos)
+
             prev_pos = pos.copy()
             self.plan_desired_ee_pos.append(pos)
         
