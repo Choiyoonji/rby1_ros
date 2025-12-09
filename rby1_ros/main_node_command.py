@@ -61,7 +61,13 @@ class MainNode(Node):
             self.action_callback,
             qos_cmd
         )
-        
+
+        self.done_pub = self.create_publisher(
+            Bool,
+            '/control/done',
+            qos_cmd
+        )
+
         self.wrist_img_pub = self.create_publisher(
             Image,
             '/camera/right_wrist/image_raw',
@@ -119,8 +125,6 @@ class MainNode(Node):
         self.action_history = []
         self.state_history = []
         self.action_traj = None
-        self.traj_total_steps = 5
-        self.list_steps = np.linspace(1, self.traj_total_steps, self.traj_total_steps)
         
         self.action_map = {
             "image": [self.publish_images],
@@ -136,10 +140,8 @@ class MainNode(Node):
             "left_rot_global": [self.calc_ee_rot_traj, "drot", ["left_arm_quaternion"]],
             "right_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion"]],
             "both_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion", "left_arm_quaternion"]],
-            "left_gripper_open": [self.set_gripper_position, "left", [1.0]],
-            "right_gripper_open": [self.set_gripper_position, "right", [1.0]],
-            "left_gripper_close": [self.set_gripper_position, "left", [0.0]],
-            "right_gripper_close": [self.set_gripper_position, "right", [0.0]],
+            "left_gripper": [self.set_gripper_position, "left_gripper_pos"],
+            "right_gripper": [self.set_gripper_position, "right_gripper_pos"],
         }
     
     # ----- /rby1/state 콜백 -----
@@ -235,10 +237,10 @@ class MainNode(Node):
             return
         
         # 그리퍼 제어는 궤적(Trajectory)이 아닌 즉시 명령이므로 예외 처리
-        if msg.mode in ["left_gripper_open", "right_gripper_open", "left_gripper_close", "right_gripper_close"]:
-            arm = action_info[1]
-            position = action_info[2][0]
-            self.set_gripper_position(arm, position)
+        if msg.mode in ["left_gripper", "right_gripper"]:
+            arm = msg.mode.split("_")[0]
+            opening = getattr(msg, action_info[1]).data
+            self.set_gripper_position(arm, opening)
             # 그리퍼 동작은 action_plan에 넣지 않고 즉시 반영하거나, 필요하다면 별도 로직 추가
             return
 
@@ -305,12 +307,12 @@ class MainNode(Node):
             self.last_planned_state[name] = last_point
         
         print(f"Updated last planned state: {self.last_planned_state}")
-        
-    def set_gripper_position(self, arm: str, position: float):
+
+    def set_gripper_position(self, arm: str, opening: bool):
         if arm == "right":
-            self.main_state.desired_right_gripper_position = position
+            self.main_state.desired_right_gripper_position = 1.0 if opening else 0.0
         elif arm == "left":
-            self.main_state.desired_left_gripper_position = position
+            self.main_state.desired_left_gripper_position = 1.0 if opening else 0.0
         else:
             self.get_logger().error(f"Unknown arm for gripper: {arm}")
         
@@ -603,6 +605,13 @@ class MainNode(Node):
                     "arm": arm,
                     "action": action[1]
                 })
+
+                # 마지막 행동이면 done 퍼블리시
+                if len(self.action_plan) == 0:
+                    print("✅ Completed action plan.")
+                    done_msg = Bool()
+                    done_msg.data = True
+                    self.done_pub.publish(done_msg)
                 
             self.action_history.append(
                 self.main_state.desired_right_arm_position.tolist() + self.main_state.desired_right_arm_quaternion.tolist()
