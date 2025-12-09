@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command, Action
+from rby1_interfaces.msg import EEpos, FTsensor, State, CommandRBY1, CommandHand, Action
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
@@ -49,9 +49,14 @@ class MainNode(Node):
         )
 
         # /control/command : 컨트롤 명령 주기 발행
-        self.command_pub = self.create_publisher(
-            Command,
-            '/control/command',
+        self.command_pub_rby1 = self.create_publisher(
+            CommandRBY1,
+            '/control/command/rby1',
+            qos_cmd
+        )
+        self.command_pub_hand = self.create_publisher(
+            CommandHand,
+            '/control/command/hand',
             qos_cmd
         )
         
@@ -142,6 +147,8 @@ class MainNode(Node):
             "both_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion", "left_arm_quaternion"]],
             "left_gripper": [self.set_gripper_position, "left_gripper_pos"],
             "right_gripper": [self.set_gripper_position, "right_gripper_pos"],
+            "left_hand": [self.set_hand_position, "left_hand_pos"],
+            "right_hand": [self.set_hand_position, "right_hand_pos"]
         }
     
     # ----- /rby1/state 콜백 -----
@@ -244,6 +251,12 @@ class MainNode(Node):
             # 그리퍼 동작은 action_plan에 넣지 않고 즉시 반영하거나, 필요하다면 별도 로직 추가
             return
 
+        if msg.mode in ["left_hand", "right_hand"]:
+            hand = msg.mode.split("_")[0]
+            position = getattr(msg, action_info[1]).data
+            self.set_hand_position(hand, position, duration=0.5)
+            return
+
         action_func = action_info[0]
         action_arg1_name = action_info[1] if len(action_info) > 1 else None
         action_arg2_names = action_info[2] if len(action_info) > 2 else None
@@ -308,13 +321,22 @@ class MainNode(Node):
         
         print(f"Updated last planned state: {self.last_planned_state}")
 
-    def set_gripper_position(self, arm: str, opening: bool):
+    def set_gripper_position(self, arm: str, opening: float, duration=0.5):
         if arm == "right":
-            self.main_state.desired_right_gripper_position = 1.0 if opening else 0.0
+            self.main_state.desired_right_gripper_position = opening
+            for _ in range(int(self.step_hz * duration)):
+                self.action_plan.append([f"right_gripper", opening])
         elif arm == "left":
-            self.main_state.desired_left_gripper_position = 1.0 if opening else 0.0
+            self.main_state.desired_left_gripper_position = opening
+            for _ in range(int(self.step_hz * duration)):
+                self.action_plan.append([f"left_gripper", opening])
         else:
             self.get_logger().error(f"Unknown arm for gripper: {arm}")
+
+    def set_hand_position(self, hand: str, position: float, duration=0.5):
+        action_len = int(self.step_hz * duration)
+        for _ in range(action_len):
+            self.action_plan.append([f"{hand}_hand", position])
         
     def calc_joint_traj(self, current_angle, dtheta):
         pass
@@ -386,9 +408,9 @@ class MainNode(Node):
         except Exception as e:
             self.get_logger().error(f"Error publishing: {e}")
         
-    def publish_command(self, command_data):
-        print(f"Publishing command: {command_data}")
-        cmd_msg = Command()
+    def publish_command_rby1(self, command_data):
+        print(f"Publishing RBY1 command: {command_data}")
+        cmd_msg = CommandRBY1()
         if command_data["mode"] == "signal":
             cmd_msg.is_active = True
             cmd_msg.ready = self.ready
@@ -398,7 +420,7 @@ class MainNode(Node):
             self.stop = False
             self.ready = False
             
-            self.command_pub.publish(cmd_msg)
+            self.command_pub_rby1.publish(cmd_msg)
             
             return
             
@@ -461,6 +483,11 @@ class MainNode(Node):
                 self.main_state.desired_left_arm_quaternion = command_data["action"][4:]
                 cmd_msg.right_btn = True
                 cmd_msg.left_btn = True
+
+        elif command_data["mode"] == "gripper":
+            cmd_msg.control_mode = "ee_position"
+            cmd_msg.right_btn = False
+            cmd_msg.left_btn = False
                 
         if command_data["mode"] in ["pos", "rot"]:
             cmd_msg.desired_right_ee_pos = EEpos()
@@ -480,7 +507,21 @@ class MainNode(Node):
         self.stop = False
         self.ready = False
         
-        self.command_pub.publish(cmd_msg)
+        self.command_pub_rby1.publish(cmd_msg)
+
+    def publish_command_hand(self, hand, opening):
+        print(f"Publishing Hand command: {hand} opening to {opening}")
+        cmd_msg = CommandHand()
+        if hand == "right":
+            cmd_msg.hand = "right"
+        elif hand == "left":
+            cmd_msg.hand = "left"
+        else:
+            self.get_logger().error(f"Unknown hand for command: {hand}")
+            return
+        cmd_msg.opening = opening
+        
+        self.command_pub_hand.publish(cmd_msg)
 
     def reset_state(self):
         self.main_state.desired_head_position = np.array([])
@@ -575,7 +616,7 @@ class MainNode(Node):
             return
         
         if self.ready or self.stop:
-            self.publish_command({
+            self.publish_command_rby1({
                 "mode": "signal",
             })
             return
@@ -597,14 +638,20 @@ class MainNode(Node):
             if self.action_plan:
                 action = self.action_plan.popleft()
                 action_mode:str = action[0]
-                
-                arm = action_mode.split('_')[0]
-                mode = action_mode.split('_')[1]
-                self.publish_command({
-                    "mode": mode,
-                    "arm": arm,
-                    "action": action[1]
-                })
+
+                if "hand" in action_mode:
+                    hand = action_mode.split('_')[0]
+                    opening = action[1]
+                    self.publish_command_hand(hand, opening)
+                    
+                else:
+                    arm = action_mode.split('_')[0]
+                    mode = action_mode.split('_')[1]
+                    self.publish_command_rby1({
+                        "mode": mode,
+                        "arm": arm,
+                        "action": action[1]
+                    })
 
                 # 마지막 행동이면 done 퍼블리시
                 if len(self.action_plan) == 0:
