@@ -126,13 +126,13 @@ class RBY1Node(Node):
         self.dyn_state.set_q(SystemContext.rby1_state.joint_positions.copy())
         self.dyn_robot.compute_forward_kinematics(self.dyn_state)
 
-        SystemContext.rby1_state.right_ee_position = self.dyn_robot.compute_transformation(
+        SystemContext.rby1_state.right_ee_pose = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_right_arm_6"]
         )
         
-        SystemContext.rby1_state.torso_ee_position = self.dyn_robot.compute_transformation(
+        SystemContext.rby1_state.torso_ee_pose = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_torso_5"]
@@ -155,16 +155,19 @@ class RBY1Node(Node):
 
         self.calc_ee_pose()
 
-        right_ee_pos, right_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.right_ee_position)
-        torso_ee_pos, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_position)
-
+        SystemContext.rby1_state.right_arm_position, right_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.right_ee_pose)
+        SystemContext.rby1_state.right_arm_quaternion = correct_quaternion_flip(SystemContext.rby1_state.right_arm_quaternion, right_ee_quat)
+        SystemContext.rby1_state.torso_position, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_pose)
+        SystemContext.rby1_state.torso_quaternion = correct_quaternion_flip(SystemContext.rby1_state.torso_quaternion, torso_ee_quat)
+        
         msg.right_ee_pos = EEpos()
-        msg.right_ee_pos.position = Float32MultiArray(data=right_ee_pos.tolist())
-        msg.right_ee_pos.quaternion = Float32MultiArray(data=right_ee_quat.tolist())
-
+        msg.right_ee_pos.position = Float32MultiArray(data=SystemContext.rby1_state.right_arm_position.tolist())
+        msg.right_ee_pos.quaternion = Float32MultiArray(data=SystemContext.rby1_state.right_arm_quaternion.tolist())
+        
         msg.torso_ee_pos = EEpos()
-        msg.torso_ee_pos.position = Float32MultiArray(data=torso_ee_pos.tolist())
-        msg.torso_ee_pos.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
+        msg.torso_ee_pos.position = Float32MultiArray(data=SystemContext.rby1_state.torso_position.tolist())
+        msg.torso_ee_pos.quaternion = Float32MultiArray(data=SystemContext.rby1_state.torso_quaternion.tolist())
+
 
         msg.right_ft_sensor = FTsensor()
         msg.right_ft_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())

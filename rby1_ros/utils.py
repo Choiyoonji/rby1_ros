@@ -138,7 +138,20 @@ def quat_to_euler(quat, seq='xyz', degrees=True) -> np.ndarray:
 # ==============================================================================
 # 3. SE(3) Transformation Helpers
 # ==============================================================================
-
+def correct_quaternion_flip(reference_quat, current_quat):
+    """
+    현재 쿼터니언(current_quat)이 참조 쿼터니언(reference_quat, 예: Action)과
+    가장 가까운 형태(부호)를 가지도록 보정합니다.
+    """
+    # 두 쿼터니언의 내적 계산
+    dot_product = np.dot(reference_quat, current_quat)
+    
+    # 내적이 음수이면 반대 방향(Antipodal)에 있는 것이므로 부호를 뒤집음 (-q = q)
+    if dot_product < 0:
+        return -current_quat
+    else:
+        return current_quat
+    
 def se3_to_pos_quat(T: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Returns:

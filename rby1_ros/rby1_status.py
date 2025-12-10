@@ -25,9 +25,9 @@ class RBY1Status:
     right_torque_sensor: np.ndarray = field(default_factory=lambda: np.array([]))
     left_torque_sensor: np.ndarray = field(default_factory=lambda: np.array([]))
 
-    right_ee_position: np.ndarray = field(default_factory=lambda: np.array([]))
-    left_ee_position: np.ndarray = field(default_factory=lambda: np.array([]))
-    torso_ee_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    right_ee_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
+    left_ee_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
+    torso_ee_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
 
     right_gripper_position: float = 1.0
     left_gripper_position: float = 1.0
@@ -40,6 +40,13 @@ class RBY1Status:
     right_arm_locked_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
     left_arm_locked_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
     torso_locked_pose: np.ndarray = field(default_factory=lambda: np.identity(4))
+    
+    right_arm_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    right_arm_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
+    left_arm_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    left_arm_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
+    torso_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    torso_quaternion: np.ndarray = field(default_factory=lambda: np.array([]))
     
     right_arm_locked_angle: np.ndarray = field(default_factory=lambda: np.array([]))
     left_arm_locked_angle: np.ndarray = field(default_factory=lambda: np.array([]))

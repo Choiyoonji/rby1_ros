@@ -245,14 +245,14 @@ class MainNode(Node):
         # 그리퍼 제어는 궤적(Trajectory)이 아닌 즉시 명령이므로 예외 처리
         if msg.mode in ["left_gripper", "right_gripper"]:
             arm = msg.mode.split("_")[0]
-            opening = getattr(msg, action_info[1]).data
+            opening = getattr(msg, action_info[1])
             self.set_gripper_position(arm, opening)
             # 그리퍼 동작은 action_plan에 넣지 않고 즉시 반영하거나, 필요하다면 별도 로직 추가
             return
 
         if msg.mode in ["left_hand", "right_hand"]:
             hand = msg.mode.split("_")[0]
-            position = getattr(msg, action_info[1]).data
+            position = getattr(msg, action_info[1])
             self.set_hand_position(hand, position, duration=0.5)
             return
 
@@ -320,7 +320,7 @@ class MainNode(Node):
         
         print(f"Updated last planned state: {self.last_planned_state}")
 
-    def set_gripper_position(self, arm: str, opening: float, duration=0.5):
+    def set_gripper_position(self, arm: str, opening: float, duration=1.5):
         if arm == "right":
             self.main_state.desired_right_gripper_position = opening
             for _ in range(int(self.step_hz * duration)):
@@ -332,7 +332,7 @@ class MainNode(Node):
         else:
             self.get_logger().error(f"Unknown arm for gripper: {arm}")
 
-    def set_hand_position(self, hand: str, position: float, duration=0.5):
+    def set_hand_position(self, hand: str, position: float, duration=1.5):
         action_len = int(self.step_hz * duration)
         for _ in range(action_len):
             self.action_plan.append([f"{hand}_hand", position])
@@ -529,10 +529,10 @@ class MainNode(Node):
         self.main_state.desired_torso_quaternion = self.main_state.current_torso_quaternion.copy()
         self.main_state.desired_right_arm_position = self.main_state.current_right_arm_position.copy()
         self.main_state.desired_right_arm_quaternion = self.main_state.current_right_arm_quaternion.copy()
-        self.main_state.desired_right_gripper_position = self.main_state.current_right_gripper_position
+        self.main_state.desired_right_gripper_position = 1.0 - self.main_state.current_right_gripper_position
         self.main_state.desired_left_arm_position = self.main_state.current_left_arm_position.copy()
         self.main_state.desired_left_arm_quaternion = self.main_state.current_left_arm_quaternion.copy()
-        self.main_state.desired_left_gripper_position = self.main_state.current_left_gripper_position
+        self.main_state.desired_left_gripper_position = 1.0 - self.main_state.current_left_gripper_position
         self.main_state.desired_joint_positions = self.main_state.current_joint_positions.copy()
         self.main_state.desired_left_arm_angle = self.main_state.current_left_arm_angle.copy()
         self.main_state.desired_right_arm_angle = self.main_state.current_right_arm_angle.copy()
