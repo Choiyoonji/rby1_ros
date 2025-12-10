@@ -4,7 +4,7 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Action
+from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, Action
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
@@ -21,7 +21,7 @@ class ActionNode(Node):
         self.main_state = MainState()
     
         self.rby1_sub = self.create_subscription(
-            State,
+            StateRBY1,
             '/rby1/state',
             self.state_callback,
             qos_state_latest
@@ -80,7 +80,7 @@ class ActionNode(Node):
         self.is_action_done: bool = True
 
     # ----- /rby1/state 콜백 -----
-    def state_callback(self, msg: State):
+    def state_callback(self, msg: StateRBY1):
         self.latest_state_msg = msg
         self.main_state.is_robot_connected = True
 

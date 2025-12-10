@@ -3,7 +3,7 @@ import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import State, CommandRBY1, EEpos, FTsensor
+from rby1_interfaces.msg import StateRBY1, CommandRBY1, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd
 
 import numpy as np
@@ -93,7 +93,7 @@ class RBY1Node(Node):
         self.get_logger().info("RBY1 Impedance Control Node Initialized")
 
         self.rby1_pub = self.create_publisher(
-            State,
+            StateRBY1,
             '/rby1/state',
             qos_state_latest
         )
@@ -152,8 +152,8 @@ class RBY1Node(Node):
             self.get_logger().warning("Robot not connected yet. Cannot publish state.")
             return
         # self.get_logger().warning("Publishing robot state.")
-        
-        msg = State()
+
+        msg = StateRBY1()
         msg.timestamp = SystemContext.rby1_state.timestamp
 
         msg.joint_positions = Float32MultiArray(data=SystemContext.rby1_state.joint_positions.tolist())

@@ -6,7 +6,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command
+from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, Command
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
@@ -72,7 +72,7 @@ class MainNode(Node):
         
         # /rby1/state : 로봇 상태 → 최신값만
         self.rby1_sub = self.create_subscription(
-            State,
+            StateRBY1,
             '/rby1/state',
             self.state_callback,
             qos_state_latest
@@ -150,7 +150,7 @@ class MainNode(Node):
             self.connected = False
     
     # ----- /rby1/state 콜백 -----
-    def state_callback(self, msg: State):
+    def state_callback(self, msg: StateRBY1):
         self.latest_state_msg = msg
         self.main_state.is_robot_connected = True
 

@@ -2,7 +2,7 @@ import rclpy
 from rclpy.node import Node
 import numpy as np
 import open3d as o3d
-from rby1_interfaces.msg import State, Command
+from rby1_interfaces.msg import StateRBY1, Command
 
 class VisualizeStateVsCommand(Node):
     """
@@ -10,7 +10,7 @@ class VisualizeStateVsCommand(Node):
     """
     def __init__(self):
         super().__init__('visualize_state_vs_command')
-        self.state_sub = self.create_subscription(State, '/rby1/state', self.state_cb, 10)
+        self.state_sub = self.create_subscription(StateRBY1, '/rby1/state', self.state_cb, 10)
         self.cmd_sub = self.create_subscription(Command, '/control/command', self.cmd_cb, 10)
         self.timer = self.create_timer(1.0/20.0, self.update_display)  # 20 Hz
 
@@ -21,7 +21,7 @@ class VisualizeStateVsCommand(Node):
         self.vis = o3d.visualization.Visualizer()
         self.vis.create_window("rby_compare", width=800, height=600)
 
-    def state_cb(self, msg: State):
+    def state_cb(self, msg: StateRBY1):
         try:
             self.current['torso'] = np.array(msg.torso_ee_pos.position.data, dtype=float)
             self.current['right'] = np.array(msg.right_ee_pos.position.data, dtype=float)

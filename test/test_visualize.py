@@ -2,7 +2,7 @@ import unittest
 from rclpy import init, shutdown
 from rclpy.node import Node
 from rby1_ros.visualize import VisualizeStateVsCommand
-from rby1_interfaces.msg import State, Command
+from rby1_interfaces.msg import StateRBY1, Command
 
 class TestVisualizeStateVsCommand(unittest.TestCase):
     def setUp(self):
@@ -19,7 +19,7 @@ class TestVisualizeStateVsCommand(unittest.TestCase):
         self.assertEqual(self.node.is_active, False)
 
     def test_state_callback(self):
-        test_state = State()
+        test_state = StateRBY1()
         test_state.torso_ee_pos.position.data = [1.0, 2.0, 0.0]
         test_state.right_ee_pos.position.data = [1.5, 2.5, 0.0]
         test_state.left_ee_pos.position.data = [0.5, 1.5, 0.0]

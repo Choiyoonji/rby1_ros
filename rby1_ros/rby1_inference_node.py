@@ -11,7 +11,7 @@ import numpy as np
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import State as RBY1State
+from rby1_interfaces.msg import StateRBY1 as RBY1State
 from qos_profiles import qos_cmd, qos_state_latest
 
 # === TCP 통신 유틸 (inference.py와 동일 프로토콜) ===

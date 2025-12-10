@@ -3,7 +3,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command, CommandHand
+from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, Command, CommandHand
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
@@ -47,7 +47,7 @@ class MainNode(Node):
 
         # /rby1/state : 로봇 상태 → 최신값만
         self.rby1_sub = self.create_subscription(
-            State,
+            StateRBY1,
             '/rby1/state',
             self.rby1_callback,
             qos_state_latest
@@ -155,6 +155,7 @@ class MainNode(Node):
         head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_headbase2head)
         head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
         self.head_pub.publish(head_cmd_msg)
+        
     # JWL2000 : hand command
     def hand_command(self):
         if not self.main_state.is_hand_connected:

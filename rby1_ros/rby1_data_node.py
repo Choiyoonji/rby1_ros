@@ -14,7 +14,7 @@ from std_msgs.msg import Bool, UInt64, String
 from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick, qos_state_latest
 
 # Import the RBY1 State message
-from rby1_interfaces.msg import State as RBY1State
+from rby1_interfaces.msg import StateRBY1 as RBY1State
 
 
 class RBY1DataNode(Node):

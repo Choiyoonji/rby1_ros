@@ -6,7 +6,7 @@ import time
 
 # Message Imports
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import State, Command, EEpos, FTsensor
+from rby1_interfaces.msg import StateRBY1, Command, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
 
 # Define QoS profiles compatible with your main node
@@ -30,7 +30,7 @@ class DummyRBY1Node(Node):
         self.get_logger().info("Dummy RBY1 Robot Node Started")
 
         # --- Publishers & Subscribers ---
-        self.state_pub = self.create_publisher(State, '/rby1/state', qos_state_latest)
+        self.state_pub = self.create_publisher(StateRBY1, '/rby1/state', qos_state_latest)
         self.cmd_sub = self.create_subscription(Command, '/control/command', self.command_callback, qos_cmd)
 
         # --- Internal Robot State Simulation ---
@@ -145,7 +145,7 @@ class DummyRBY1Node(Node):
         # This is usually sufficient for testing the *logic* of the main node.
 
     def publish_state(self):
-        msg = State()
+        msg = StateRBY1()
         msg.timestamp = time.time()
         msg.is_initialized = self.is_initialized
         msg.is_stopped = self.is_stopped
