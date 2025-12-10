@@ -3,13 +3,27 @@ from .utils import *
 
 
 class LinearCommandFilter:
-    def __init__(self, dt, omega=10.0, zeta=1.0):
+    def __init__(self, dt, omega=10.0, zeta=1.0, 
+                 x_bounds=None, y_bounds=None, z_bounds=None):
         """
-        Cartesian Position (XYZ) 필터
+        Cartesian Position (XYZ) 필터 with optional task space clipping
+        
+        Args:
+            dt: Time step
+            omega: Natural frequency (rad/s)
+            zeta: Damping ratio (1.0 for critically damped)
+            x_bounds: Tuple (min, max) for X position clipping, or None to disable
+            y_bounds: Tuple (min, max) for Y position clipping, or None to disable
+            z_bounds: Tuple (min, max) for Z position clipping, or None to disable
         """
         self.dt = dt
         self.omega = omega
         self.zeta = zeta
+        
+        # Task space bounds for clipping
+        self.x_bounds = x_bounds
+        self.y_bounds = y_bounds
+        self.z_bounds = z_bounds
         
         # 상태 변수: 위치(3), 속도(3), 가속도(3)
         self.pos = np.zeros(3)
@@ -18,13 +32,52 @@ class LinearCommandFilter:
         
         self.initialized = False
 
+    def set_workspace_bounds(self, x_bounds=None, y_bounds=None, z_bounds=None):
+        """
+        Set workspace bounds for task space clipping
+        
+        Args:
+            x_bounds: Tuple (min, max) or None
+            y_bounds: Tuple (min, max) or None
+            z_bounds: Tuple (min, max) or None
+        """
+        self.x_bounds = x_bounds
+        self.y_bounds = y_bounds
+        self.z_bounds = z_bounds
+
+    def _clip_position(self, pos):
+        """
+        Clip position to workspace bounds
+        
+        Args:
+            pos: Position array [x, y, z]
+            
+        Returns:
+            Clipped position array
+        """
+        clipped_pos = pos.copy()
+        
+        if self.x_bounds is not None:
+            clipped_pos[0] = np.clip(clipped_pos[0], self.x_bounds[0], self.x_bounds[1])
+        if self.y_bounds is not None:
+            clipped_pos[1] = np.clip(clipped_pos[1], self.y_bounds[0], self.y_bounds[1])
+        if self.z_bounds is not None:
+            clipped_pos[2] = np.clip(clipped_pos[2], self.z_bounds[0], self.z_bounds[1])
+            
+        return clipped_pos
+
     def update(self, target_pos):
         """
         target_pos: [x, y, z] numpy array
+        
+        Returns:
+            pos: Clipped and filtered position
+            vel: Velocity
+            acc: Acceleration
         """
         target_pos = np.array(target_pos, dtype=float)
         if not self.initialized:
-            self.pos = target_pos.copy()
+            self.pos = self._clip_position(target_pos)
             self.initialized = True
             
         # 1. 오차 계산 (단순 벡터 차이)
@@ -37,6 +90,9 @@ class LinearCommandFilter:
         # 3. 적분 (Euler Integration)
         self.vel += self.acc * self.dt
         self.pos += self.vel * self.dt
+        
+        # 4. Apply workspace clipping to prevent out-of-bounds motion
+        self.pos = self._clip_position(self.pos)
         
         return self.pos, self.vel, self.acc
 
