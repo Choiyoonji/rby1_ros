@@ -6,10 +6,12 @@ import h5py
 import rclpy
 from rclpy.node import Node
 
-from bind import inspire_np
-from std_msgs.msg import String, Bool, UInt64
 from rby1_interfaces.msg import CommandHand
+from std_msgs.msg import String, Bool, UInt64
 from rby1_ros.qos_profiles import qos_cmd, qos_ctrl_latched, qos_tick
+from bind import inspire_np
+from inspire.inspire_kinematics import RH56F1_Kinematic, spring_damper_ik, mapping_meta2inspire_l, mapping_meta2inspire_r, FINGER_DIST_INSPIRE, FINGET_DIST_META
+from inspire.functions_np import *
 
 class HandMainNode(Node):
     def __init__(self):
@@ -31,9 +33,16 @@ class HandMainNode(Node):
         self.open_angle = [1721, 1721, 1721, 1721, 1350, 600]
         self.close_angle = [1000, 1000, 1000, 1000, 1200, 600]
         
+        # Kinematics
+        self.hand_kin = RH56F1_Kinematic()
+        
+        # cmd msg 합친 리스트
+        self.meta_l = list()
+        self.meta_r = list()
+        
         # 현재 목표 각도 (Action에 사용)
-        self.current_target_l = list(self.init_angle)
-        self.current_target_r = list(self.init_angle)
+        self.current_target_l = np.zeros(6)
+        self.current_target_r = np.zeros(6)
         
         # 현재 실제 센서값 (Recording에 사용)
         self.act_angle_l = [0.0] * 6
@@ -61,7 +70,7 @@ class HandMainNode(Node):
         self._init_buffers()
 
         self.hand_cmd_sub = self.create_subscription(
-            CommandHand, '/control/action/hand', self.hand_command_callback, qos_cmd
+            CommandHand, '/control/hand_command', self.hand_command_callback, qos_cmd
         )
 
         self.sub_record = self.create_subscription(Bool, "/record", self._on_record, qos_ctrl_latched)
@@ -114,21 +123,41 @@ class HandMainNode(Node):
         self.buf_r_tang_force = []
         self.buf_r_temp = []
         self.buf_r_cur = []
+    
+    def compute_target_angle(self, type: str, meta_data: list, current_angle: np.ndarray) -> list:
+        if not type in ['left', 'right']: raise ValueError("type must be 'left' or 'right'")
+        self.hand_kin.type = type
+        _, _, P_lnk, R_lnk = self.hand_kin.DH_forward(current_angle)
+        p_EE_meta, _ = mapping_meta2inspire_l(meta_data, FINGET_DIST_META, P_lnk, R_lnk, FINGER_DIST_INSPIRE)
+        
+        q_d = spring_damper_ik(
+            q_init=current_angle,
+            target_pos=p_EE_meta,
+            type=type,
+            base_pos=np.array([0,0,0]),
+            base_rot=np.eye(3),
+            K=50.0,
+            D=2.0,
+            max_iterations=10,
+            step_clip=0.1,
+            tol=1e-3
+        )
+        return q_d
 
-    # TODO: Meta 연동
     def hand_command_callback(self, msg: CommandHand):
-        if msg.hand not in self.cmd_type:
+        if msg.p_EE_l.data and msg.p_EE_r.data is None:
             return
+        self.meta_l.append(np.array(msg.p_EE_l.data))
+        self.meta_l.append(np.array(msg.p_lnk_l.data))
+        self.meta_l.append(np.array(msg.r_lnk_l.data))
+        self.meta_r.append(np.array(msg.p_EE_r.data))
+        self.meta_r.append(np.array(msg.p_lnk_r.data))
+        self.meta_r.append(np.array(msg.r_lnk_r.data))
         
-        target_angle = self.open_angle if msg.opening == 1 else self.close_angle
-        action_str = "OPEN" if msg.opening == 1 else "CLOSE"
-        
-        if msg.hand == "left":
-            self.current_target_l = target_angle
-        elif msg.hand == "right":
-            self.current_target_r = target_angle
+        self.current_target_l = self.compute_target_angle("left", self.meta_l, self.act_angle_l)
+        self.current_target_r = self.compute_target_angle("right", self.meta_r, self.act_angle_r)
             
-        self.get_logger().info(f"Command received: {msg.hand} -> {action_str}")
+        self.get_logger().info(f"Command received :left -> {self.current_target_l}, right -> {self.current_target_r}")
 
     def _on_record(self, msg: Bool):
         if msg.data and not self.recording:
@@ -228,11 +257,11 @@ class HandMainNode(Node):
             # --- Left Hand ---
             self.controller_l.cyclic_PDO_init()
             self.controller_l.write_pdo_enable(1)
-            self.controller_l.write_pdo_angle_set6(self.current_target_l)
+            self.controller_l.write_pdo_convert_angle_set6(self.current_target_l)
             self.controller_l.write_pdo_force_set6(self.target_force)
             self.controller_l.write_pdo_speed_set6(self.target_speed)
             # time.sleep(0.0001)
-            self.act_angle_l = self.controller_l.read_pdo_angle_get6()
+            self.act_angle_l = self.controller_l.read_pdo_convert_angle_get6()
             self.act_force_l = self.controller_l.read_pdo_force_get6()
             self.act_temp_l = self.controller_l.read_pdo_temp_get6()
             self.act_cur_l = self.controller_l.read_pdo_cur_get6()
@@ -244,11 +273,11 @@ class HandMainNode(Node):
             # --- Right Hand ---
             self.controller_r.cyclic_PDO_init()
             self.controller_r.write_pdo_enable(1)
-            self.controller_r.write_pdo_angle_set6(self.current_target_r)
+            self.controller_r.write_pdo_convert_angle_set6(self.current_target_r)
             self.controller_r.write_pdo_force_set6(self.target_force)
             self.controller_r.write_pdo_speed_set6(self.target_speed)
             # time.sleep(0.0001)
-            self.act_angle_r = self.controller_r.read_pdo_angle_get6()
+            self.act_angle_r = self.controller_r.read_pdo_convert_angle_get6()
             self.act_force_r = self.controller_r.read_pdo_force_get6()
             self.act_temp_r = self.controller_r.read_pdo_temp_get6()
             self.act_cur_r = self.controller_r.read_pdo_cur_get6()
