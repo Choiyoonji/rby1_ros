@@ -351,11 +351,11 @@ class MetaNode(Node):
                         response.right_gripper_pos = self.meta_state.right_hand_position
                         response.left_gripper_pos = self.meta_state.left_hand_position
                         # JWL2000 : return right hand data
-                        response.right_hand.p_EE = Float32MultiArray(data=self.meta_state.right_hand_EE_position.tolist())
+                        response.right_hand.p_ee = Float32MultiArray(data=self.meta_state.right_hand_EE_position.tolist())
                         response.right_hand.p_lnk = Float32MultiArray(data=self.meta_state.right_hand_lnk_position.tolist())
                         response.right_hand.r_lnk = Float32MultiArray(data=self.meta_state.right_hand_lnk_rotation.tolist())
                         # JWL2000 : return left hand data
-                        response.left_hand.p_EE  = Float32MultiArray(data=self.meta_state.left_hand_EE_position.tolist())
+                        response.left_hand.p_ee  = Float32MultiArray(data=self.meta_state.left_hand_EE_position.tolist())
                         response.left_hand.p_lnk  = Float32MultiArray(data=self.meta_state.left_hand_lnk_position.tolist())
                         response.left_hand.r_lnk  = Float32MultiArray(data=self.meta_state.left_hand_lnk_rotation.tolist())
                         response.error_msg += " Returning last known positions."

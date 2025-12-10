@@ -155,7 +155,7 @@ class MainNode(Node):
         head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_headbase2head)
         head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
         self.head_pub.publish(head_cmd_msg)
-        
+
     # JWL2000 : hand command
     def hand_command(self):
         if not self.main_state.is_hand_connected:
@@ -165,10 +165,10 @@ class MainNode(Node):
         if not self.move:
             return
         hand_cmd_msg = CommandHand()
-        hand_cmd_msg.right_hand.p_EE = Float32MultiArray(data=self.main_state.desired_right_hand_EE_position.tolist())
+        hand_cmd_msg.right_hand.p_ee = Float32MultiArray(data=self.main_state.desired_right_hand_EE_position.tolist())
         hand_cmd_msg.right_hand.p_lnk = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_position.tolist())
         hand_cmd_msg.right_hand.r_lnk = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_rotation.tolist())
-        hand_cmd_msg.left_hand.p_EE = Float32MultiArray(data=self.main_state.desired_left_hand_EE_position.tolist())
+        hand_cmd_msg.left_hand.p_ee = Float32MultiArray(data=self.main_state.desired_left_hand_EE_position.tolist())
         hand_cmd_msg.left_hand.p_lnk = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_position.tolist())
         hand_cmd_msg.left_hand.r_lnk = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_rotation.tolist())
         self.hand_pub.publish(hand_cmd_msg)

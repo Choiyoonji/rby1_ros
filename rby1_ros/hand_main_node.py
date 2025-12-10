@@ -119,12 +119,12 @@ class HandMainNode(Node):
         return q_d
 
     def hand_command_callback(self, msg: CommandHand):
-        if msg.left_hand.p_EE.data and msg.right_hand.p_EE.data is None:
+        if msg.left_hand.p_ee.data and msg.right_hand.p_ee.data is None:
             return
-        self.meta_l.append(np.array(msg.left_hand.p_EE.data))
+        self.meta_l.append(np.array(msg.left_hand.p_ee.data))
         self.meta_l.append(np.array(msg.left_hand.p_lnk.data))
         self.meta_l.append(np.array(msg.left_hand.r_lnk.data))
-        self.meta_r.append(np.array(msg.right_hand.p_EE.data))
+        self.meta_r.append(np.array(msg.right_hand.p_ee.data))
         self.meta_r.append(np.array(msg.right_hand.p_lnk.data))
         self.meta_r.append(np.array(msg.right_hand.r_lnk.data))
         
