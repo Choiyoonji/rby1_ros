@@ -119,14 +119,14 @@ class HandMainNode(Node):
         return q_d
 
     def hand_command_callback(self, msg: CommandHand):
-        if msg.p_EE_l.data and msg.p_EE_r.data is None:
+        if msg.left_hand.p_EE.data and msg.right_hand.p_EE.data is None:
             return
-        self.meta_l.append(np.array(msg.p_EE_l.data))
-        self.meta_l.append(np.array(msg.p_lnk_l.data))
-        self.meta_l.append(np.array(msg.r_lnk_l.data))
-        self.meta_r.append(np.array(msg.p_EE_r.data))
-        self.meta_r.append(np.array(msg.p_lnk_r.data))
-        self.meta_r.append(np.array(msg.r_lnk_r.data))
+        self.meta_l.append(np.array(msg.left_hand.p_EE.data))
+        self.meta_l.append(np.array(msg.left_hand.p_lnk.data))
+        self.meta_l.append(np.array(msg.left_hand.r_lnk.data))
+        self.meta_r.append(np.array(msg.right_hand.p_EE.data))
+        self.meta_r.append(np.array(msg.right_hand.p_lnk.data))
+        self.meta_r.append(np.array(msg.right_hand.r_lnk.data))
         
         self.current_target_l = self.compute_target_angle("left", self.meta_l, self.act_angle_l)
         self.current_target_r = self.compute_target_angle("right", self.meta_r, self.act_angle_r)
@@ -137,19 +137,19 @@ class HandMainNode(Node):
         state_msg = StateHand()
         state_msg.timestamp = self.get_clock().now().to_msg()
         
-        state_msg.act_angle_l = Float32MultiArray(data=self.act_angle_l.tolist())
-        state_msg.act_force_l = Float32MultiArray(data=self.act_force_l)
-        state_msg.act_temp_l = Float32MultiArray(data=self.act_temp_l)
-        state_msg.act_cur_l = Float32MultiArray(data=self.act_cur_l)
-        state_msg.act_norm_force_l = Float32MultiArray(data=self.act_norm_force_l)
-        state_msg.act_tang_force_l = Float32MultiArray(data=self.act_tang_force_l)
+        state_msg.left_hand.act_angle = Float32MultiArray(data=self.act_angle_l.tolist())
+        state_msg.left_hand.act_force = Float32MultiArray(data=self.act_force_l)
+        state_msg.left_hand.act_temp = Float32MultiArray(data=self.act_temp_l)
+        state_msg.left_hand.act_cur = Float32MultiArray(data=self.act_cur_l)
+        state_msg.left_hand.act_norm_force = Float32MultiArray(data=self.act_norm_force_l)
+        state_msg.left_hand.act_tang_force = Float32MultiArray(data=self.act_tang_force_l)
         
-        state_msg.act_angle_r = Float32MultiArray(data=self.act_angle_r.tolist())
-        state_msg.act_force_r = Float32MultiArray(data=self.act_force_r)
-        state_msg.act_temp_r = Float32MultiArray(data=self.act_temp_r)
-        state_msg.act_cur_r = Float32MultiArray(data=self.act_cur_r)
-        state_msg.act_norm_force_r = Float32MultiArray(data=self.act_norm_force_r)
-        state_msg.act_tang_force_r = Float32MultiArray(data=self.act_tang_force_r)
+        state_msg.right_hand.act_angle = Float32MultiArray(data=self.act_angle_r.tolist())
+        state_msg.right_hand.act_force = Float32MultiArray(data=self.act_force_r)
+        state_msg.right_hand.act_temp = Float32MultiArray(data=self.act_temp_r)
+        state_msg.right_hand.act_cur = Float32MultiArray(data=self.act_cur_r)
+        state_msg.right_hand.act_norm_force = Float32MultiArray(data=self.act_norm_force_r)
+        state_msg.right_hand.act_tang_force = Float32MultiArray(data=self.act_tang_force_r)
         
         self.hand_state_pub.publish(state_msg)
     

@@ -135,19 +135,19 @@ class HandDataNode(Node):
             self.buf_r_cur.append(np.asarray([]))
             return
 
-        self.buf_l_angle.append(as_np(st.act_angle_l))
-        self.buf_l_angle_force.append(as_np(st.act_angle_force_l))
-        self.buf_l_norm_force.append(as_np(st.act_norm_force_l))
-        self.buf_l_tang_force.append(as_np(st.act_tang_force_l))
-        self.buf_l_temp.append(as_np(st.act_temp_l))
-        self.buf_l_cur.append(as_np(st.act_cur_l))
+        self.buf_l_angle.append(as_np(st.left_hand.act_angle))
+        self.buf_l_angle_force.append(as_np(st.left_hand.act_angle_force))
+        self.buf_l_norm_force.append(as_np(st.left_hand.act_norm_force))
+        self.buf_l_tang_force.append(as_np(st.left_hand.act_tang_force))
+        self.buf_l_temp.append(as_np(st.left_hand.act_temp))
+        self.buf_l_cur.append(as_np(st.left_hand.act_cur))
 
-        self.buf_r_angle.append(as_np(st.act_angle_r))
-        self.buf_r_angle_force.append(as_np(st.act_angle_force_r))
-        self.buf_r_norm_force.append(as_np(st.act_norm_force_r))
-        self.buf_r_tang_force.append(as_np(st.act_tang_force_r))
-        self.buf_r_temp.append(as_np(st.act_temp_r))
-        self.buf_r_cur.append(as_np(st.act_cur_r))
+        self.buf_r_angle.append(as_np(st.right_hand.act_angle))
+        self.buf_r_angle_force.append(as_np(st.right_hand.act_angle_force))
+        self.buf_r_norm_force.append(as_np(st.right_hand.act_norm_force))
+        self.buf_r_tang_force.append(as_np(st.right_hand.act_tang_force))
+        self.buf_r_temp.append(as_np(st.right_hand.act_temp))
+        self.buf_r_cur.append(as_np(st.right_hand.act_cur))
 
     def _on_state(self, msg: InspireState):
         self.latest_state = msg

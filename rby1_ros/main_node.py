@@ -164,12 +164,12 @@ class MainNode(Node):
         if not self.move:
             return
         hand_cmd_msg = CommandHand()
-        hand_cmd_msg.p_EE_r = Float32MultiArray(data=self.main_state.desired_right_hand_EE_position.tolist())
-        hand_cmd_msg.p_lnk_r = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_position.tolist())
-        hand_cmd_msg.r_lnk_r = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_rotation.tolist())
-        hand_cmd_msg.p_EE_l = Float32MultiArray(data=self.main_state.desired_left_hand_EE_position.tolist())
-        hand_cmd_msg.p_lnk_l = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_position.tolist())
-        hand_cmd_msg.r_lnk_l = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_rotation.tolist())
+        hand_cmd_msg.right_hand.p_EE = Float32MultiArray(data=self.main_state.desired_right_hand_EE_position.tolist())
+        hand_cmd_msg.right_hand.p_lnk = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_position.tolist())
+        hand_cmd_msg.right_hand.r_lnk = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_rotation.tolist())
+        hand_cmd_msg.left_hand.p_EE = Float32MultiArray(data=self.main_state.desired_left_hand_EE_position.tolist())
+        hand_cmd_msg.left_hand.p_lnk = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_position.tolist())
+        hand_cmd_msg.left_hand.r_lnk = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_rotation.tolist())
         self.hand_pub.publish(hand_cmd_msg)
 
     def send_meta_get_data(self):
