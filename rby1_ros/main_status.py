@@ -1,9 +1,12 @@
 import numpy as np
 from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 @dataclass
 class MainStatus:
     is_robot_connected: bool = False
+    # JWL2000 - add robot state flags
+    is_hand_connected: bool = False
     is_robot_in_ready_pose: bool = False
     is_robot_initialized: bool = False
     is_robot_stopped: bool = False
@@ -45,3 +48,13 @@ class MainStatus:
 
     desired_right_gripper_position: float = 1.0
     desired_left_gripper_position: float = 1.0
+    
+    # Author : JWL2000 - add desired right hand data
+    desired_right_hand_EE_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    desired_right_hand_lnk_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    desired_right_hand_lnk_rotation: np.ndarray = field(default_factory=lambda: np.array([]))
+    # Author : JWL2000 - add desired left hand data
+    desired_left_hand_EE_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    desired_left_hand_lnk_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    desired_left_hand_lnk_rotation: np.ndarray = field(default_factory=lambda: np.array([]))
+    
