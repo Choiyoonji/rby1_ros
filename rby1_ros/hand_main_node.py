@@ -6,9 +6,9 @@ import h5py
 import rclpy
 from rclpy.node import Node
 
-from rby1_interfaces.msg import CommandHand
-from std_msgs.msg import String, Bool, UInt64
-from rby1_ros.qos_profiles import qos_cmd, qos_ctrl_latched, qos_tick
+from rby1_interfaces.msg import CommandHand, HandState
+from std_msgs.msg import Float32MultiArray
+from rby1_ros.qos_profiles import qos_cmd, qos_state_latest
 from bind import inspire_np
 from inspire.inspire_kinematics import RH56F1_Kinematic, spring_damper_ik, mapping_meta2inspire_l, mapping_meta2inspire_r, FINGER_DIST_INSPIRE, FINGET_DIST_META
 from inspire.functions_np import *
@@ -60,30 +60,18 @@ class HandMainNode(Node):
         self.act_tang_force_r = [0.0] * 8
         
         self.initialize_hands()
-        
-        # Recording 관련 파라미터 및 변수
-        self.recording = False
-        self.dataset_path = None
-        self.h5_path = None
-        
-        # 버퍼 초기화
-        self._init_buffers()
 
         self.hand_cmd_sub = self.create_subscription(
             CommandHand, '/control/hand_command', self.hand_command_callback, qos_cmd
         )
-
-        self.sub_record = self.create_subscription(Bool, "/record", self._on_record, qos_ctrl_latched)
-        self.sub_path = self.create_subscription(String, "/dataset_path", self._on_data_path, qos_ctrl_latched)
-        self.sub_tick = self.create_subscription(UInt64, "/tick", self._on_tick, qos_tick)
-
-        self.cmd_type = ["left", "right"]
-        self.cmd_mode = [1, 0]
+        self.hand_state_pub = self.create_publisher(
+            HandState, '/hand/state', qos_state_latest
+        )
 
         # Main Loop Timer (500Hz)
         self.step_hz = 500
         self.step_timer = self.create_timer(1/self.step_hz, self.loop_step)
-        
+        self.state_pub_timer = self.create_timer(1/100.0, self.publish_hand_state) 
         self.get_logger().info("Inspire Hand Control & Record Node Started.")
 
     def initialize_hands(self):
@@ -105,30 +93,16 @@ class HandMainNode(Node):
             self.controller_r.write_pdo_speed_set6(self.target_speed)
             # time.sleep(0.0001)
             self.controller_r.cyclic_PDO_exit()
-            
-    def _init_buffers(self):
-        self.buf_now_mono_ns = []
-        self.buf_tick = []
-        
-        self.buf_l_angle = []
-        self.buf_l_force = [] 
-        self.buf_l_norm_force = []
-        self.buf_l_tang_force = []
-        self.buf_l_temp = []
-        self.buf_l_cur = []
-        
-        self.buf_r_angle = []
-        self.buf_r_force = []
-        self.buf_r_norm_force = []
-        self.buf_r_tang_force = []
-        self.buf_r_temp = []
-        self.buf_r_cur = []
     
     def compute_target_angle(self, type: str, meta_data: list, current_angle: np.ndarray) -> list:
         if not type in ['left', 'right']: raise ValueError("type must be 'left' or 'right'")
         self.hand_kin.type = type
         _, _, P_lnk, R_lnk = self.hand_kin.DH_forward(current_angle)
-        p_EE_meta, _ = mapping_meta2inspire_l(meta_data, FINGET_DIST_META, P_lnk, R_lnk, FINGER_DIST_INSPIRE)
+        
+        if type == 'right':
+            p_EE_meta, _ = mapping_meta2inspire_r(meta_data, FINGET_DIST_META, P_lnk, R_lnk, FINGER_DIST_INSPIRE)
+        else:
+            p_EE_meta, _ = mapping_meta2inspire_l(meta_data, FINGET_DIST_META, P_lnk, R_lnk, FINGER_DIST_INSPIRE)
         
         q_d = spring_damper_ik(
             q_init=current_angle,
@@ -158,96 +132,27 @@ class HandMainNode(Node):
         self.current_target_r = self.compute_target_angle("right", self.meta_r, self.act_angle_r)
             
         self.get_logger().info(f"Command received :left -> {self.current_target_l}, right -> {self.current_target_r}")
-
-    def _on_record(self, msg: Bool):
-        if msg.data and not self.recording:
-            if self.dataset_path:
-                self._start_recording()
-            else:
-                self.recording = True
-        elif (not msg.data) and self.recording:
-            self._stop_and_dump()
-
-    def _on_data_path(self, msg: String):
-        self.dataset_path = msg.data
-        self.h5_path = os.path.join(self.dataset_path, "inspire_hand_data.h5")
-        if self.recording:
-            self._start_recording()
-
-    def _start_recording(self):
-        self.recording = True
-        self._init_buffers()
-        self.get_logger().info("[Record] START")
-
-    def _on_tick(self, msg: UInt64):
-        """
-        Tick이 오면 loop_step에서 최신 업데이트한 self.act_... 값을 저장
-        """
-        if not self.recording or self.dataset_path is None:
-            return
-
-        # Time & Tick
-        self.buf_now_mono_ns.append(time.monotonic_ns())
-        self.buf_tick.append(msg.data)
+    
+    def publish_hand_state(self):
+        state_msg = HandState()
+        state_msg.timestamp = self.get_clock().now().to_msg()
         
-        # Sensor Data (Control Loop에서 갱신된 최신값 복사)
-        self.buf_l_angle.append(list(self.act_angle_l))
-        self.buf_l_force.append(list(self.act_force_l))
-        self.buf_l_norm_force.append(list(self.act_norm_force_l))
-        self.buf_l_tang_force.append(list(self.act_tang_force_l))
-        self.buf_l_temp.append(list(self.act_temp_l))
-        self.buf_l_cur.append(list(self.act_cur_l))
-
-        self.buf_r_angle.append(list(self.act_angle_r))
-        self.buf_r_force.append(list(self.act_force_r))
-        self.buf_r_norm_force.append(list(self.act_norm_force_r))
-        self.buf_r_tang_force.append(list(self.act_tang_force_r))
-        self.buf_r_temp.append(list(self.act_temp_r))
-        self.buf_r_cur.append(list(self.act_cur_r))
-
-    def _stop_and_dump(self):
-        self.recording = False
-        self.get_logger().info(f"[Record] STOP. Saving {len(self.buf_tick)} samples...")
-        self._write_h5()
-
-    def _write_h5(self):
-        if not self.h5_path: return
+        state_msg.act_angle_l = Float32MultiArray(data=self.act_angle_l.tolist())
+        state_msg.act_force_l = Float32MultiArray(data=self.act_force_l)
+        state_msg.act_temp_l = Float32MultiArray(data=self.act_temp_l)
+        state_msg.act_cur_l = Float32MultiArray(data=self.act_cur_l)
+        state_msg.act_norm_force_l = Float32MultiArray(data=self.act_norm_force_l)
+        state_msg.act_tang_force_l = Float32MultiArray(data=self.act_tang_force_l)
         
-        try:
-            os.makedirs(os.path.dirname(self.h5_path), exist_ok=True)
-            with h5py.File(self.h5_path, "w") as f:
-                f.attrs["created_wall_time_ns"] = int(time.time_ns())
-                
-                def create_dset(name, data):
-                    if not data: 
-                        return
-                    f.create_dataset(name, data=np.array(data), compression="gzip")
-                
-                create_dset("now_mono_ns", self.buf_now_mono_ns)
-                create_dset("tick", self.buf_tick)
-                
-                # Left Hand Data
-                create_dset("left/angle", self.buf_l_angle)
-                create_dset("left/force", self.buf_l_force)
-                create_dset("left/norm_force", self.buf_l_norm_force) 
-                create_dset("left/tang_force", self.buf_l_tang_force) 
-                create_dset("left/temp", self.buf_l_temp)             
-                create_dset("left/current", self.buf_l_cur)           
-
-                # Right Hand Data
-                create_dset("right/angle", self.buf_r_angle)
-                create_dset("right/force", self.buf_r_force)
-                create_dset("right/norm_force", self.buf_r_norm_force)
-                create_dset("right/tang_force", self.buf_r_tang_force)
-                create_dset("right/temp", self.buf_r_temp)            
-                create_dset("right/current", self.buf_r_cur)          
-
-            self.get_logger().info(f"Saved to {self.h5_path}")
-            self._init_buffers()
-            
-        except Exception as e:
-            self.get_logger().error(f"Failed to write HDF5: {e}")
-            
+        state_msg.act_angle_r = Float32MultiArray(data=self.act_angle_r.tolist())
+        state_msg.act_force_r = Float32MultiArray(data=self.act_force_r)
+        state_msg.act_temp_r = Float32MultiArray(data=self.act_temp_r)
+        state_msg.act_cur_r = Float32MultiArray(data=self.act_cur_r)
+        state_msg.act_norm_force_r = Float32MultiArray(data=self.act_norm_force_r)
+        state_msg.act_tang_force_r = Float32MultiArray(data=self.act_tang_force_r)
+        
+        self.hand_state_pub.publish(state_msg)
+    
     def loop_step(self):
         """
         1. Write: 목표 각도 전송
