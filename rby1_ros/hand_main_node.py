@@ -6,7 +6,7 @@ import h5py
 import rclpy
 from rclpy.node import Node
 
-from rby1_interfaces.msg import CommandHand, HandState
+from rby1_interfaces.msg import CommandHand, StateHand
 from std_msgs.msg import Float32MultiArray
 from rby1_ros.qos_profiles import qos_cmd, qos_state_latest
 from bind import inspire_np
@@ -65,7 +65,7 @@ class HandMainNode(Node):
             CommandHand, '/control/hand_command', self.hand_command_callback, qos_cmd
         )
         self.hand_state_pub = self.create_publisher(
-            HandState, '/hand/state', qos_state_latest
+            StateHand, '/hand/state', qos_state_latest
         )
 
         # Main Loop Timer (500Hz)
@@ -134,7 +134,7 @@ class HandMainNode(Node):
         self.get_logger().info(f"Command received :left -> {self.current_target_l}, right -> {self.current_target_r}")
     
     def publish_hand_state(self):
-        state_msg = HandState()
+        state_msg = StateHand()
         state_msg.timestamp = self.get_clock().now().to_msg()
         
         state_msg.act_angle_l = Float32MultiArray(data=self.act_angle_l.tolist())
