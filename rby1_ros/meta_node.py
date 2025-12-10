@@ -59,9 +59,11 @@ class MetaNode(Node):
             data["head"] = {"pos": parsed["head_robot"]["pos"], "rotmat": _orthonormalize(parsed["head_robot"]["rotmat"])}
             data["left"] = {"pos": parsed["left_robot"]["pos"], "rotmat": _orthonormalize(parsed["left_robot"]["rotmat"] @ ROT_T), "hand": parsed['left_raw']}
             data["right"] = {"pos": parsed["right_robot"]["pos"], "rotmat": _orthonormalize(parsed["right_robot"]["rotmat"] @ ROT_T), "hand": parsed['right_raw']}
-            data["hand"] = {"right": {}, "left": {}}
-            _, data["hand"]["left"]["pos"], data["hand"]["left"]["rotmat"] = self.receiver.update_hand(parsed['left_raw'])
-            _, data["hand"]["right"]["pos"], data["hand"]["right"]["rotmat"] = self.receiver.update_hand(parsed['right_raw'])
+            data["hand"] = {"right": None, "left": None}
+            # _, data["hand"]["left"]["pos"], data["hand"]["left"]["rotmat"] = self.receiver.update_hand(parsed['left_raw'])
+            # _, data["hand"]["right"]["pos"], data["hand"]["right"]["rotmat"] = self.receiver.update_hand(parsed['right_raw'])
+            data["hand"]['left'] = self.receiver.update_hand(parsed['left_raw'], type='rel')
+            data["hand"]['right'] = self.receiver.update_hand(parsed['right_raw'], type='rel')
 
         return data
     
@@ -308,7 +310,15 @@ class MetaNode(Node):
 
                         self.meta_state.right_hand_position = 0.7 * self.meta_state.right_hand_position + 0.3 * float(np.clip(right_gripper_pos, 0.0, 1.0))
                         self.meta_state.left_hand_position = 0.7 * self.meta_state.left_hand_position + 0.3 * float(np.clip(left_gripper_pos, 0.0, 1.0))
-
+                    # JWL2000 : update right hand data
+                    self.meta_state.right_hand_EE_position = data["hand"]["right"][0]
+                    self.meta_state.right_hand_lnk_position = data["hand"]["right"][1]
+                    self.meta_state.right_hand_lnk_rotation = data["hand"]["right"][2]
+                    # JWL2000 : update left hand data
+                    self.meta_state.left_hand_EE_position = data["hand"]["left"][0]
+                    self.meta_state.left_hand_lnk_position = data["hand"]["left"][1]
+                    self.meta_state.left_hand_lnk_rotation = data["hand"]["left"][2]
+                        
                     response.head_ee_pos.position   = Float32MultiArray(data=self.meta_state.head_position.tolist())
                     response.head_ee_pos.quaternion = Float32MultiArray(data=self.meta_state.head_quaternion.tolist())
                     response.torso_ee_pos.position   = Float32MultiArray(data=self.meta_state.torso_position.tolist())
@@ -319,7 +329,14 @@ class MetaNode(Node):
                     response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
                     response.right_gripper_pos = self.meta_state.right_hand_position
                     response.left_gripper_pos = self.meta_state.left_hand_position
-
+                    # JWL2000 : return right hand data
+                    response.right_hand_EE_position = Float32MultiArray(data=self.meta_state.right_hand_EE_position.tolist())
+                    response.right_hand_lnk_position = Float32MultiArray(data=self.meta_state.right_hand_lnk_position.tolist())
+                    response.right_hand_lnk_rotation = Float32MultiArray(data=self.meta_state.right_hand_lnk_rotation.tolist())
+                    # JWL2000 : return left hand data
+                    response.left_hand_EE_position  = Float32MultiArray(data=self.meta_state.left_hand_EE_position.tolist())
+                    response.left_hand_lnk_position  = Float32MultiArray(data=self.meta_state.left_hand_lnk_position.tolist())
+                    response.left_hand_lnk_rotation  = Float32MultiArray(data=self.meta_state.left_hand_lnk_rotation.tolist())
                 else:
                     response.error_msg = "No valid Meta data available."
                     if self.meta_state.head_position.size != 0:
@@ -333,6 +350,14 @@ class MetaNode(Node):
                         response.left_ee_pos.quaternion  = Float32MultiArray(data=self.meta_state.left_arm_quaternion.tolist())
                         response.right_gripper_pos = self.meta_state.right_hand_position
                         response.left_gripper_pos = self.meta_state.left_hand_position
+                        # JWL2000 : return right hand data
+                        response.right_hand_EE_position = Float32MultiArray(data=self.meta_state.right_hand_EE_position.tolist())
+                        response.right_hand_lnk_position = Float32MultiArray(data=self.meta_state.right_hand_lnk_position.tolist())
+                        response.right_hand_lnk_rotation = Float32MultiArray(data=self.meta_state.right_hand_lnk_rotation.tolist())
+                        # JWL2000 : return left hand data
+                        response.left_hand_EE_position  = Float32MultiArray(data=self.meta_state.left_hand_EE_position.tolist())
+                        response.left_hand_lnk_position  = Float32MultiArray(data=self.meta_state.left_hand_lnk_position.tolist())
+                        response.left_hand_lnk_rotation  = Float32MultiArray(data=self.meta_state.left_hand_lnk_rotation.tolist())
                         response.error_msg += " Returning last known positions."
                     else:
                         response.error_msg += " No last known positions available."

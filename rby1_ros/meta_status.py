@@ -1,5 +1,6 @@
 import numpy as np
 from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 @dataclass
 class MetaStatus:
@@ -32,6 +33,14 @@ class MetaStatus:
 
     right_hand_position: float = 0.0
     left_hand_position: float = 0.0
+    # JWL2000 - add right hand data
+    right_hand_EE_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    right_hand_lnk_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    right_hand_lnk_rotation: np.ndarray = field(default_factory=lambda: np.array([]))
+    # JWL2000 - add left hand data
+    left_hand_EE_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    left_hand_lnk_position: np.ndarray = field(default_factory=lambda: np.array([]))
+    left_hand_lnk_rotation: np.ndarray = field(default_factory=lambda: np.array([]))
 
     # Flags
     is_connected: bool = False
