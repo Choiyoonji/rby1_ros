@@ -35,14 +35,14 @@ class Settings:
     update_dt : float = 0.01   # 100 Hz
     hand_offset: np.ndarray = np.array([0.0, 0.0, -0.15])
 
-    no_gripper : bool = True
+    no_gripper : bool = False
     no_head : bool = True
 
     T_hand_offset = np.identity(4)
     T_hand_offset[0:3, 3] = hand_offset
 
-    rby1_ip = "192.168.0.83"
-    # rby1_ip = "192.168.30.1"
+    # rby1_ip = "192.168.0.83"
+    rby1_ip = "192.168.30.1"
     port = 50051
     model = "a"
 

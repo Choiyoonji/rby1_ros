@@ -303,7 +303,7 @@ class RBY1Node(Node):
                 exit(1)
             self.gripper.homing()
             self.gripper.start()
-            self.gripper.set_normalized_target(np.array([1.0]))
+            self.gripper.set_normalized_target(np.array([1.0, 1.0]))
 
         SystemContext.rby1_state.is_robot_connected = True
         

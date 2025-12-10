@@ -94,9 +94,9 @@ class Gripper:
                 target_torque = []
                 for dev_id, enc in self.current_q:
                     if enc < self.target_q[dev_id]:
-                        target_torque.append(0.3)
+                        target_torque.append(2.0)
                     else:
-                        target_torque.append(1.0)
+                        target_torque.append(3.0)
                         
                 self.bus.group_sync_write_send_torque([(dev_id, tq) for dev_id, tq in enumerate(target_torque)])
                 self.bus.group_sync_write_send_position(
