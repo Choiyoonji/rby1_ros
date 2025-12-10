@@ -3,7 +3,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, State, Command
+from rby1_interfaces.msg import EEpos, FTsensor, State, Command, CommandHand
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
@@ -66,6 +66,13 @@ class MainNode(Node):
             '/control/head_command',
             qos_cmd
         )
+        
+        # JWL 2000 : /control/hand_command
+        self.hand_pub = self.create_publisher(
+            Float32MultiArray,
+            '/control/hand_command',
+            qos_cmd
+        )
 
         self.meta_initialize_client = self.create_client(
             MetaInitialReq,
@@ -86,6 +93,8 @@ class MainNode(Node):
         self.meta_timer = self.create_timer(1/50.0, self.meta_loop)
         self.command_timer = self.create_timer(1/20.0, self.publish_command)
         self.head_command_timer = self.create_timer(1/50.0, self.head_command)
+        # JWL2000 : hand command timer
+        self.hand_command_timer = self.create_timer(1/50.0, self.hand_command)
 
         # 초기화 서비스
         self._awaiting_meta_init = False
@@ -146,6 +155,22 @@ class MainNode(Node):
         head_pos_in_torso, head_quat_in_torso = se3_to_pos_quat(T_headbase2head)
         head_cmd_msg.data = head_pos_in_torso.tolist() + head_quat_in_torso.tolist()
         self.head_pub.publish(head_cmd_msg)
+    # JWL2000 : hand command
+    def hand_command(self):
+        if not self.main_state.is_hand_connected:
+            return
+        if not self.main_state.is_meta_ready:
+            return
+        if not self.move:
+            return
+        hand_cmd_msg = CommandHand()
+        hand_cmd_msg.p_EE_r = Float32MultiArray(data=self.main_state.desired_right_hand_EE_position.tolist())
+        hand_cmd_msg.p_lnk_r = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_position.tolist())
+        hand_cmd_msg.r_lnk_r = Float32MultiArray(data=self.main_state.desired_right_hand_lnk_rotation.tolist())
+        hand_cmd_msg.p_EE_l = Float32MultiArray(data=self.main_state.desired_left_hand_EE_position.tolist())
+        hand_cmd_msg.p_lnk_l = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_position.tolist())
+        hand_cmd_msg.r_lnk_l = Float32MultiArray(data=self.main_state.desired_left_hand_lnk_rotation.tolist())
+        self.hand_pub.publish(hand_cmd_msg)
 
     def send_meta_get_data(self):
         self.data_req.request = True
@@ -378,6 +403,14 @@ class MainNode(Node):
 
                 self.main_state.desired_right_gripper_position = response.right_gripper_pos
                 self.main_state.desired_left_gripper_position = response.left_gripper_pos
+                
+                # Author : JWL2000 - add desired hand EE position
+                self.main_state.desired_right_hand_EE_position = np.array(response.right_hand_EE_position)
+                self.main_state.desired_right_hand_lnk_position = np.array(response.right_hand_lnk_position)
+                self.main_state.desired_right_hand_lnk_rotation = np.array(response.right_hand_lnk_rotation)
+                self.main_state.desired_left_hand_EE_position = np.array(response.left_hand_EE_position)
+                self.main_state.desired_left_hand_lnk_position = np.array(response.left_hand_lnk_position)
+                self.main_state.desired_left_hand_lnk_rotation = np.array(response.left_hand_lnk_rotation) 
 
                 self._awaiting_meta_data = False
                 self._meta_data_future = None
@@ -404,6 +437,13 @@ class MainNode(Node):
         self.main_state.desired_left_arm_quaternion = np.array([])
         self.main_state.desired_right_gripper_position = 0.0
         self.main_state.desired_left_gripper_position = 0.0
+        # Author : JWL2000 - reset desired hand EE position
+        self.main_state.desired_right_hand_EE_position = np.array([])
+        self.main_state.desired_right_hand_lnk_position = np.array([])
+        self.main_state.desired_right_hand_lnk_rotation = np.array([])
+        self.main_state.desired_left_hand_EE_position = np.array([])
+        self.main_state.desired_left_hand_lnk_position = np.array([])
+        self.main_state.desired_left_hand_lnk_rotation = np.array([])
 
     def main_loop(self):
         if self.main_state.is_robot_stopped:
