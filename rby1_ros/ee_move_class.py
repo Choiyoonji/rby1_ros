@@ -29,11 +29,11 @@ class Move_ee:
         # TODO: get_bounding_box 코드로 범위 확인 후 설정
         self.lower_bound = {
             'left': np.array([-0.5, -0.5, 0.0]),
-            'right': np.array([0.3181, -0.4482, 0.9010])
+            'right': np.array([0.2434, -0.3385, 0.8286])
         }
         self.upper_bound = {
             'left': np.array([np.inf, np.inf, np.inf]),
-            'right': np.array([0.4379, -0.1898, 1.2618])
+            'right': np.array([0.4292, -0.1776, 1.1150])
         }
 
     def calculate_required_duration(self, delta_ee_pos: np.ndarray) -> float:

@@ -18,9 +18,9 @@ class ControlStatus:
 
     control_mode: str = "component"  # Options: "whole_body"
 
-    desired_right_ee_position: dict = field(default_factory=dict)
-    desired_left_ee_position: dict = field(default_factory=dict)
-    desired_torso_ee_position: dict = field(default_factory=dict)
+    desired_right_ee_pose: dict = field(default_factory=dict)
+    desired_left_ee_pose: dict = field(default_factory=dict)
+    desired_torso_ee_pose: dict = field(default_factory=dict)
 
     desired_right_ee_T: np.ndarray = field(default_factory=lambda: np.identity(4))
     desired_left_ee_T: np.ndarray = field(default_factory=lambda: np.identity(4))

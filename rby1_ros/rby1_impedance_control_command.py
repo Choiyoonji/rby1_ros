@@ -129,19 +129,19 @@ class RBY1Node(Node):
         self.dyn_state.set_q(SystemContext.rby1_state.joint_positions.copy())
         self.dyn_robot.compute_forward_kinematics(self.dyn_state)
 
-        SystemContext.rby1_state.right_ee_position = self.dyn_robot.compute_transformation(
+        SystemContext.rby1_state.right_ee_pose = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_right_arm_6"]
         ) @ self.settings.T_hand_offset
 
-        SystemContext.rby1_state.left_ee_position = self.dyn_robot.compute_transformation(
+        SystemContext.rby1_state.left_ee_pose = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_left_arm_6"]
         ) @ self.settings.T_hand_offset
         
-        SystemContext.rby1_state.torso_ee_position = self.dyn_robot.compute_transformation(
+        SystemContext.rby1_state.torso_ee_pose = self.dyn_robot.compute_transformation(
             self.dyn_state,
             self.link_idx["base"],
             self.link_idx["link_torso_5"]
@@ -163,22 +163,25 @@ class RBY1Node(Node):
 
         self.calc_ee_pose()
 
-        right_ee_pos, right_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.right_ee_position)
-        left_ee_pos, left_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.left_ee_position)
-        torso_ee_pos, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_position)
-
+        SystemContext.rby1_state.right_arm_position, right_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.right_ee_pose)
+        SystemContext.rby1_state.right_arm_quaternion = correct_quaternion_flip(SystemContext.rby1_state.right_arm_quaternion, right_ee_quat)
+        SystemContext.rby1_state.left_arm_position, left_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.left_ee_pose)
+        SystemContext.rby1_state.left_arm_quaternion = correct_quaternion_flip(SystemContext.rby1_state.left_arm_quaternion, left_ee_quat)
+        SystemContext.rby1_state.torso_position, torso_ee_quat = se3_to_pos_quat(SystemContext.rby1_state.torso_ee_pose)
+        SystemContext.rby1_state.torso_quaternion = correct_quaternion_flip(SystemContext.rby1_state.torso_quaternion, torso_ee_quat)
+        
         msg.right_ee_pos = EEpos()
-        msg.right_ee_pos.position = Float32MultiArray(data=right_ee_pos.tolist())
-        msg.right_ee_pos.quaternion = Float32MultiArray(data=right_ee_quat.tolist())
+        msg.right_ee_pos.position = Float32MultiArray(data=SystemContext.rby1_state.right_arm_position.tolist())
+        msg.right_ee_pos.quaternion = Float32MultiArray(data=SystemContext.rby1_state.right_arm_quaternion.tolist())
 
         msg.left_ee_pos = EEpos()
-        msg.left_ee_pos.position = Float32MultiArray(data=left_ee_pos.tolist())
-        msg.left_ee_pos.quaternion = Float32MultiArray(data=left_ee_quat.tolist())
+        msg.left_ee_pos.position = Float32MultiArray(data=SystemContext.rby1_state.left_arm_position.tolist())
+        msg.left_ee_pos.quaternion = Float32MultiArray(data=SystemContext.rby1_state.left_arm_quaternion.tolist())
 
         msg.torso_ee_pos = EEpos()
-        msg.torso_ee_pos.position = Float32MultiArray(data=torso_ee_pos.tolist())
-        msg.torso_ee_pos.quaternion = Float32MultiArray(data=torso_ee_quat.tolist())
-
+        msg.torso_ee_pos.position = Float32MultiArray(data=SystemContext.rby1_state.torso_position.tolist())
+        msg.torso_ee_pos.quaternion = Float32MultiArray(data=SystemContext.rby1_state.torso_quaternion.tolist())
+        
         msg.right_ft_sensor = FTsensor()
         msg.right_ft_sensor.force = Float32MultiArray(data=SystemContext.rby1_state.right_force_sensor.tolist())
         msg.right_ft_sensor.torque = Float32MultiArray(data=SystemContext.rby1_state.right_torque_sensor.tolist())
@@ -249,11 +252,11 @@ class RBY1Node(Node):
                 desired_left_quat = np.array(msg.desired_left_ee_pos.quaternion.data)
 
                 if SystemContext.control_state.is_button_right_pressed:
-                    SystemContext.control_state.desired_right_ee_position["position"] = desired_right_pos
-                    SystemContext.control_state.desired_right_ee_position["quaternion"] = desired_right_quat
+                    SystemContext.control_state.desired_right_ee_pose["position"] = desired_right_pos
+                    SystemContext.control_state.desired_right_ee_pose["quaternion"] = desired_right_quat
                 if SystemContext.control_state.is_button_left_pressed:
-                    SystemContext.control_state.desired_left_ee_position["position"] = desired_left_pos
-                    SystemContext.control_state.desired_left_ee_position["quaternion"] = desired_left_quat
+                    SystemContext.control_state.desired_left_ee_pose["position"] = desired_left_pos
+                    SystemContext.control_state.desired_left_ee_pose["quaternion"] = desired_left_quat
                     
             if self.gripper is not None:
                 SystemContext.control_state.desired_right_gripper_position = msg.desired_right_gripper_pos
@@ -463,9 +466,9 @@ class RBY1Node(Node):
                 SystemContext.rby1_state.is_right_following = False
                 SystemContext.rby1_state.is_left_following = False
                 SystemContext.rby1_state.is_torso_following = False
-                SystemContext.rby1_state.torso_locked_pose = SystemContext.rby1_state.torso_ee_position.copy()
-                SystemContext.rby1_state.right_arm_locked_pose = SystemContext.rby1_state.right_ee_position.copy()
-                SystemContext.rby1_state.left_arm_locked_pose = SystemContext.rby1_state.left_ee_position.copy()
+                SystemContext.rby1_state.torso_locked_pose = SystemContext.rby1_state.torso_ee_pose.copy()
+                SystemContext.rby1_state.right_arm_locked_pose = SystemContext.rby1_state.right_ee_pose.copy()
+                SystemContext.rby1_state.left_arm_locked_pose = SystemContext.rby1_state.left_ee_pose.copy()
 
         if SystemContext.control_state.is_controller_connected:
             if SystemContext.control_state.move and SystemContext.control_state.is_active:
@@ -499,8 +502,8 @@ class RBY1Node(Node):
 
                 if SystemContext.rby1_state.is_right_following:
                     SystemContext.control_state.desired_right_ee_T = pos_to_se3(
-                        SystemContext.control_state.desired_right_ee_position["position"],
-                        SystemContext.control_state.desired_right_ee_position["quaternion"]
+                        SystemContext.control_state.desired_right_ee_pose["position"],
+                        SystemContext.control_state.desired_right_ee_pose["quaternion"]
                     )
                     right_T = SystemContext.control_state.desired_right_ee_T
                     SystemContext.rby1_state.right_arm_locked_pose = right_T.copy()
@@ -509,8 +512,8 @@ class RBY1Node(Node):
                 
                 # if SystemContext.rby1_state.is_left_following:
                 #     SystemContext.control_state.desired_left_ee_T = pos_to_se3(
-                #         SystemContext.control_state.desired_left_ee_position["position"],
-                #         SystemContext.control_state.desired_left_ee_position["quaternion"]
+                #         SystemContext.control_state.desired_left_ee_pose["position"],
+                #         SystemContext.control_state.desired_left_ee_pose["quaternion"]
                 #     )
                 #     left_T = SystemContext.control_state.desired_left_ee_T
                 #     SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
@@ -519,8 +522,8 @@ class RBY1Node(Node):
                 
                 if SystemContext.rby1_state.is_torso_following:
                     SystemContext.control_state.desired_torso_ee_T = pos_to_se3(
-                        SystemContext.control_state.desired_torso_ee_position["position"],
-                        SystemContext.control_state.desired_torso_ee_position["quaternion"]
+                        SystemContext.control_state.desired_torso_ee_pose["position"],
+                        SystemContext.control_state.desired_torso_ee_pose["quaternion"]
                     )
                     torso_T = SystemContext.control_state.desired_torso_ee_T
                     SystemContext.rby1_state.torso_locked_pose = torso_T.copy()
