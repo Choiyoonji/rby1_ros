@@ -143,6 +143,12 @@ def correct_quaternion_flip(reference_quat, current_quat):
     현재 쿼터니언(current_quat)이 참조 쿼터니언(reference_quat, 예: Action)과
     가장 가까운 형태(부호)를 가지도록 보정합니다.
     """
+    if len(reference_quat) != 4 or len(current_quat) != 4:
+        return current_quat
+    
+    reference_quat = np.asarray(reference_quat, dtype=float)
+    current_quat = np.asarray(current_quat, dtype=float)
+    
     # 두 쿼터니언의 내적 계산
     dot_product = np.dot(reference_quat, current_quat)
     
