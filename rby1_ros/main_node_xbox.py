@@ -92,6 +92,7 @@ class MainNode(Node):
 
         self.action_plan = collections.deque()
         self.last_planned_state = {}
+        self.is_published = True
 
         self.get_logger().info(
             f"[init] RBY1CommandNode started."
@@ -127,8 +128,11 @@ class MainNode(Node):
         dt = 1.0 / self.step_hz
         
         # Position and Orientation Filters (omega=10.0 for responsive teleoperation)
-        self.right_pos_filter = LinearCommandFilter(dt=dt, omega=10.0, zeta=1.0)
-        self.right_rot_filter = AngularCommandFilter(dt=dt, omega=10.0, zeta=1.0)
+        self.right_pos_filter = LinearCommandFilter(dt=dt, omega=5.0, zeta=1.5, 
+                                                    x_bounds=(0.2434, 0.4292), 
+                                                    y_bounds=(-0.3385, -0.1776), 
+                                                    z_bounds=(0.8286, 1.1150))
+        self.right_rot_filter = AngularCommandFilter(dt=dt, omega=5.0, zeta=1.5)
         self.left_pos_filter = LinearCommandFilter(dt=dt, omega=10.0, zeta=1.0)
         self.left_rot_filter = AngularCommandFilter(dt=dt, omega=10.0, zeta=1.0)
         
@@ -259,10 +263,12 @@ class MainNode(Node):
             self.publish_images()
             return
         
+        self.is_published = False
+        
         # Gripper control (immediate command)
         if msg.mode in ["left_gripper", "right_gripper"]:
             arm = msg.mode.split("_")[0]
-            opening = msg.left_gripper_pos.data if arm == "left" else msg.right_gripper_pos.data
+            opening = msg.left_gripper_pos if arm == "left" else msg.right_gripper_pos
             if isinstance(opening, list):
                 opening = opening[0] if len(opening) > 0 else 1.0
             self.set_gripper_position(arm, opening)
@@ -311,10 +317,12 @@ class MainNode(Node):
         if arm_spec == 'right':
             target_pos = self.main_state.current_right_arm_position + dpos
             filtered_pos, lin_vel, lin_acc = self.right_pos_filter.update(target_pos)
+            print(f"Right Pos Target: {target_pos}, Filtered: {filtered_pos}")
             self.main_state.desired_right_arm_position = filtered_pos
         elif arm_spec == 'left':
             target_pos = self.main_state.current_left_arm_position + dpos
             filtered_pos, lin_vel, lin_acc = self.left_pos_filter.update(target_pos)
+            print(f"Left Pos Target: {target_pos}, Filtered: {filtered_pos}")
             self.main_state.desired_left_arm_position = filtered_pos
         elif arm_spec == 'both':
             # Split delta for both arms
@@ -326,6 +334,9 @@ class MainNode(Node):
             
             filtered_pos_right, _, _ = self.right_pos_filter.update(target_pos_right)
             filtered_pos_left, _, _ = self.left_pos_filter.update(target_pos_left)
+            
+            print(f"Both Pos Target Right: {target_pos_right}, Filtered: {filtered_pos_right}")
+            print(f"Both Pos Target Left: {target_pos_left}, Filtered: {filtered_pos_left}")
             
             self.main_state.desired_right_arm_position = filtered_pos_right
             self.main_state.desired_left_arm_position = filtered_pos_left
@@ -363,10 +374,12 @@ class MainNode(Node):
             # Apply incremental rotation to current quaternion
             target_quat = mul_quat(self.main_state.current_right_arm_quaternion, delta_quat)
             filtered_quat, ang_vel, ang_acc = self.right_rot_filter.update(target_quat, frame=frame)
+            print(f"Right Rot Target: {target_quat}, Filtered: {filtered_quat}")
             self.main_state.desired_right_arm_quaternion = filtered_quat
         elif arm_spec == 'left':
             target_quat = mul_quat(self.main_state.current_left_arm_quaternion, delta_quat)
             filtered_quat, ang_vel, ang_acc = self.left_rot_filter.update(target_quat, frame=frame)
+            print(f"Left Rot Target: {target_quat}, Filtered: {filtered_quat}")
             self.main_state.desired_left_arm_quaternion = filtered_quat
         elif arm_spec == 'both':
             # Split delta for both arms
@@ -382,6 +395,9 @@ class MainNode(Node):
             filtered_quat_right, _, _ = self.right_rot_filter.update(target_quat_right, frame=frame)
             filtered_quat_left, _, _ = self.left_rot_filter.update(target_quat_left, frame=frame)
             
+            print(f"Both Rot Target Right: {target_quat_right}, Filtered: {filtered_quat_right}")
+            print(f"Both Rot Target Left: {target_quat_left}, Filtered: {filtered_quat_left}")
+            
             self.main_state.desired_right_arm_quaternion = filtered_quat_right
             self.main_state.desired_left_arm_quaternion = filtered_quat_left
 
@@ -389,8 +405,10 @@ class MainNode(Node):
     def set_gripper_position(self, arm: str, opening: float, duration=0.5):
         if arm == "right":
             self.main_state.desired_right_gripper_position = opening
+            print(f"Set right gripper to {opening}")
         elif arm == "left":
             self.main_state.desired_left_gripper_position = opening
+            print(f"Set left gripper to {opening}")
         else:
             self.get_logger().error(f"Unknown arm for gripper: {arm}")
 
@@ -424,7 +442,7 @@ class MainNode(Node):
             self.get_logger().error(f"Error publishing: {e}")
         
     def publish_command_rby1(self, command_data):
-        print(f"Publishing RBY1 command: mode={command_data['mode']}, arm={command_data.get('arm', 'N/A')}")
+        # print(f"Publishing RBY1 command: mode={command_data['mode']}, arm={command_data.get('arm', 'N/A')}")
         cmd_msg = CommandRBY1()
         
         if command_data["mode"] == "signal":
@@ -654,18 +672,21 @@ class MainNode(Node):
             return
         
         try:
-            # Publish current filtered state directly
-            # The action_callback applies filter updates, and step publishes the results
-            self.publish_command_rby1({
-                "mode": "pos",
-                "arm": "both",
-                "action": np.concatenate([
-                    self.main_state.desired_right_arm_position,
-                    self.main_state.desired_right_arm_quaternion,
-                    self.main_state.desired_left_arm_position,
-                    self.main_state.desired_left_arm_quaternion
-                ])
-            })
+            if self.is_published is False:
+                self.get_logger().info("Publishing updated command based on latest action.")
+                self.is_published = True
+                # Publish current filtered state directly
+                # The action_callback applies filter updates, and step publishes the results
+                self.publish_command_rby1({
+                    "mode": "pos",
+                    "arm": "right",
+                    "action": np.concatenate([
+                        self.main_state.desired_right_arm_position,
+                        self.main_state.desired_right_arm_quaternion,
+                        # self.main_state.desired_left_arm_position,
+                        # self.main_state.desired_left_arm_quaternion
+                    ])
+                })
             
             self.action_history.append(
                 self.main_state.desired_right_arm_position.tolist() + self.main_state.desired_right_arm_quaternion.tolist()

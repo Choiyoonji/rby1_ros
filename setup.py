@@ -50,6 +50,7 @@ setup(
             'main_node_command = rby1_ros.main_node_command:main',
             'action_node = rby1_ros.action_node:main',
             'hand_node = rby1_ros.hand_node:main',
+            'main_node_xbox = rby1_ros.main_node_xbox:main',
         ],
     },
 )

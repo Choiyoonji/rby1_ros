@@ -163,7 +163,7 @@ class XboxControllerNode(Node):
         if gripper_changed:
             msg.mode = f"{self.target_arm}_gripper"
             msg.right_gripper_pos = float(self.current_gripper_val)
-            msg.left_gripper_pos = float(self.current_gripper_val)
+            # msg.left_gripper_pos = float(self.current_gripper_val)
             self.publisher_.publish(msg)
             # self.get_logger().info(f"🤚 Gripper: {self.current_gripper_val:.2f}")
             return # 그리퍼 조작 중에는 팔 이동 차단

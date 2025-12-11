@@ -6,7 +6,7 @@ import time
 
 # Message Imports
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import StateRBY1, Command, EEpos, FTsensor
+from rby1_interfaces.msg import StateRBY1, CommandRBY1, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched, qos_image_stream
 
 # Define QoS profiles compatible with your main node
@@ -31,7 +31,7 @@ class DummyRBY1Node(Node):
 
         # --- Publishers & Subscribers ---
         self.state_pub = self.create_publisher(StateRBY1, '/rby1/state', qos_state_latest)
-        self.cmd_sub = self.create_subscription(Command, '/control/command', self.command_callback, qos_cmd)
+        self.cmd_sub = self.create_subscription(CommandRBY1, '/control/command/rby1', self.command_callback, qos_cmd)
 
         # --- Internal Robot State Simulation ---
         self.hz = 30.0
@@ -47,7 +47,7 @@ class DummyRBY1Node(Node):
         
         # Current State
         self.curr_joints = np.zeros(self.dof_count)
-        self.curr_ee_right_pos = np.array([0.5, -0.3, 0.5]) # Arbitrary starting pose
+        self.curr_ee_right_pos = np.array([0.2434, -0.3385, 0.8286]) # Arbitrary starting pose
         self.curr_ee_right_quat = np.array([0.0, 0.0, 0.0, 1.0])
         self.curr_ee_left_pos = np.array([0.5, 0.3, 0.5])
         self.curr_ee_left_quat = np.array([0.0, 0.0, 0.0, 1.0])
@@ -71,7 +71,7 @@ class DummyRBY1Node(Node):
         # Timer
         self.timer = self.create_timer(self.dt, self.timer_callback)
 
-    def command_callback(self, msg: Command):
+    def command_callback(self, msg: CommandRBY1):
         """Receive commands from main_node_command.py"""
         
         # Handle Flags
