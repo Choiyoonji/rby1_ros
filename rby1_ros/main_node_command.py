@@ -109,8 +109,8 @@ class MainNode(Node):
         }
         
         # ----- camera process open -----
-        self.cam1 = self.create_cam_process("D405", EXO_CAM_SHM_NAME)
-        self.cam2 = self.create_cam_process("D435I", WRI1_CAM_SHM_NAME)
+        self.cam1 = self.create_cam_process("D435I", EXO_CAM_SHM_NAME)
+        self.cam2 = self.create_cam_process("D405", WRI1_CAM_SHM_NAME)
 
         self.cam1.start()
         self.cam2.start()
@@ -122,12 +122,18 @@ class MainNode(Node):
         
         self.step_hz = 30
         self.step_timer = self.create_timer(1/self.step_hz, self.step)
+
+        #TODO: image publish 1s마다
+        self.image_publish_counter = 0
+        self.image_publish_interval = int(self.step_hz * 1.0)  
         
         self.pos_traj = Move_ee(Hz=self.step_hz, duration=0.3)
         self.rot_traj = Rotate_ee(Hz=self.step_hz, duration=5.0)
         
-        self.action_history = []
-        self.state_history = []
+        self.left_action_history = []
+        self.left_state_history = []
+        self.right_action_history = []
+        self.right_state_history = []
         self.action_traj = None
         
         self.action_map = {
@@ -146,8 +152,8 @@ class MainNode(Node):
             "both_rot_global": [self.calc_ee_rot_traj, "drot", ["right_arm_quaternion", "left_arm_quaternion"]],
             "left_gripper": [self.set_gripper_position, "left_gripper_pos"],
             "right_gripper": [self.set_gripper_position, "right_gripper_pos"],
-            "left_hand": [self.set_hand_position, "left_hand_pos"],
-            "right_hand": [self.set_hand_position, "right_hand_pos"]
+            "left_hand": [self.set_hand_position, "opening"],
+            "right_hand": [self.set_hand_position, "opening"]
         }
     
     # ----- /rby1/state 콜백 -----
@@ -173,7 +179,7 @@ class MainNode(Node):
         self.main_state.current_left_gripper_position = msg.left_gripper_pos
         
     def create_cam_process(self, cam_type, shm_name, serial_number=None):
-        if cam_type == "D405" or cam_type == "D435I":
+        if cam_type == "D405" or cam_type == "D435I" or cam_type == "L515":
             return Realsense_MP(
                 shm_name=shm_name,
                 device_name=cam_type,
@@ -251,8 +257,11 @@ class MainNode(Node):
             return
 
         if msg.mode in ["left_hand", "right_hand"]:
+            self.get_logger().info(f'Processing hand action for {msg.mode}')
             hand = msg.mode.split("_")[0]
-            position = getattr(msg, action_info[1])
+            hand_cmd = getattr(msg, msg.mode)
+            position = hand_cmd.opening
+            self.get_logger().info(f'Setting {hand} hand to position {position}')
             self.set_hand_position(hand, position, duration=0.5)
             return
 
@@ -333,9 +342,11 @@ class MainNode(Node):
             self.get_logger().error(f"Unknown arm for gripper: {arm}")
 
     def set_hand_position(self, hand: str, position: float, duration=1.5):
+        self.get_logger().info(f'Setting {hand} hand to position {position} over {duration} seconds')
         action_len = int(self.step_hz * duration)
         for _ in range(action_len):
             self.action_plan.append([f"{hand}_hand", position])
+            self.get_logger().info(f'Appended action for {hand} hand to position {position}')
         
     def calc_joint_traj(self, current_angle, dtheta):
         pass
@@ -509,7 +520,7 @@ class MainNode(Node):
         self.command_pub_rby1.publish(cmd_msg)
 
     def publish_command_hand(self, hand, opening):
-        print(f"Publishing Hand command: {hand} opening to {opening}")
+        self.get_logger().info(f"Publishing Hand command: {hand} opening to {opening}")
         cmd_msg = CommandHand()
         if hand == "right":
             cmd_msg.hand = "right"
@@ -542,17 +553,19 @@ class MainNode(Node):
         # self.state_history = []
         
     def save_history_plot_png(self):
-        if len(self.action_history) == 0 or len(self.state_history) == 0:
+        if len(self.left_action_history) == 0 or len(self.left_state_history) == 0:
             return
-        action_array = np.array(self.action_history)
-        state_array = np.array(self.state_history)
+        if len(self.right_action_history) == 0 or len(self.right_state_history) == 0:
+            return
+        left_action_array = np.array(self.left_action_history)
+        left_state_array = np.array(self.left_state_history)
         
-        plt.figure(figsize=(16, 3 * action_array.shape[1]))
+        plt.figure(figsize=(16, 3 * left_action_array.shape[1]))
         
-        for i in range(action_array.shape[1]):
-            plt.subplot(action_array.shape[1], 1, i+1)
-            plt.plot(action_array[:, i], label=f'Action {i}')
-            plt.plot(state_array[:, i], label=f'State {i}', alpha=0.5)
+        for i in range(left_action_array.shape[1]):
+            plt.subplot(left_action_array.shape[1], 1, i+1)
+            plt.plot(left_action_array[:, i], label=f'Action {i}')
+            plt.plot(left_state_array[:, i], label=f'State {i}', alpha=0.5)
             plt.legend()
             plt.xlabel('Time Step')
             plt.ylabel('Value')
@@ -561,33 +574,79 @@ class MainNode(Node):
         plt.tight_layout()
         timestamp = int(time.time())
         home_dir = str(Path.home())
-        filename = f'{home_dir}/action_state_history_{timestamp}.png'
+        filename = f'{home_dir}/action_plot/left_action_state_history_{timestamp}.png'
         plt.savefig(filename)
         plt.close()
         self.get_logger().info(f'Saved action/state history plot to {filename}')
         
-        self.action_history = []
-        self.state_history = []
+        right_action_array = np.array(self.right_action_history)
+        right_state_array = np.array(self.right_state_history)
+        
+        plt.figure(figsize=(16, 3 * right_action_array.shape[1]))
+        
+        for i in range(right_action_array.shape[1]):
+            plt.subplot(right_action_array.shape[1], 1, i+1)
+            plt.plot(right_action_array[:, i], label=f'Action {i}')
+            plt.plot(right_state_array[:, i], label=f'State {i}', alpha=0.5)
+            plt.legend()
+            plt.xlabel('Time Step')
+            plt.ylabel('Value')
+            plt.grid()
+        
+        plt.tight_layout()
+        filename = f'{home_dir}/action_plot/right_action_state_history_{timestamp}.png'
+        plt.savefig(filename)
+        plt.close()
+        self.get_logger().info(f'Saved action/state history plot to {filename}')
+        
+        self.left_action_history = []
+        self.left_state_history = []
+        self.right_action_history = []
+        self.right_state_history = []
         
     def step(self):
         if self.main_state.is_robot_stopped:
             self.reset_state()
             
-        try:
-            color1 = self.ensure_bgr(self.shm1.as_array().copy())
-            color2 = self.ensure_bgr(self.shm2.as_array().copy())
-        except Exception as e:
-            print("⚠️ Failed to read camera frames from SHM:", e)
-            time.sleep(0.05)
-            return
+        # try:
+        #     color1 = self.ensure_bgr(self.shm1.as_array().copy())
+        #     color2 = self.ensure_bgr(self.shm2.as_array().copy())
+        # except Exception as e:
+        #     print("⚠️ Failed to read camera frames from SHM:", e)
+        #     time.sleep(0.05)
+        #     return
 
-        if color1 is None or color2 is None:
-            print("⚠️ Invalid camera frames. Skipping.")
-            time.sleep(0.05)
-            return
+        # if color1 is None or color2 is None:
+        #     print("⚠️ Invalid camera frames. Skipping.")
+        #     time.sleep(0.05)
+        #     return
         
-        concat_img = np.hstack([color1.copy(), color2.copy()])
-        cv2.imshow("CAM", concat_img)
+        # # 2초마다 이미지 publish (카운터 방식)
+        # self.image_publish_counter += 1
+        # if self.image_publish_counter >= self.image_publish_interval:
+        #     self.image_publish_counter = 0
+        #     try:
+        #         now = self.get_clock().now().to_msg()
+                
+        #         # right_wrist_D405 이미지 발행
+        #         msg1 = self.bridge.cv2_to_imgmsg(color1, encoding="bgr8")
+        #         msg1.header.stamp = now
+        #         msg1.header.frame_id = "right_wrist_camera"
+        #         self.wrist_img_pub.publish(msg1)
+                
+        #         # external_D435I 이미지 발행
+        #         msg2 = self.bridge.cv2_to_imgmsg(color2, encoding="bgr8")
+        #         msg2.header.stamp = now
+        #         msg2.header.frame_id = "external_camera"
+        #         self.external_img_pub.publish(msg2)
+                
+        #         self.get_logger().info('Published camera images')
+                
+        #     except Exception as e:
+        #         self.get_logger().error(f"Error publishing images: {e}")
+        
+        # concat_img = np.hstack([color1.copy(), color2.copy()])
+        cv2.imshow("CAM", np.zeros((640, 480, 3), dtype=np.uint8))
         
         key = cv2.waitKey(1) & 0xFF
         if key == ord('r'):
@@ -609,6 +668,7 @@ class MainNode(Node):
             cv2.destroyAllWindows()
             self.destroy_node()
             rclpy.shutdown()
+            return
         
         # state가 아직 없음
         if self.main_state.is_robot_connected is False:
@@ -622,7 +682,7 @@ class MainNode(Node):
         
         if self.move is False:
             print("⚠️ Move mode is off. Waiting for 'f' key to start moving.")
-            if len(self.action_history) > 0 and len(self.state_history) > 0:
+            if len(self.left_action_history) > 0 and len(self.left_state_history) > 0:
                 print("Saving action/state history plot...")
                 self.save_history_plot_png()
             return
@@ -633,14 +693,15 @@ class MainNode(Node):
             return
         
         try:
-            
+            self.get_logger().info(f'Action plan length: {len(self.action_plan)}')
             if self.action_plan:
                 action = self.action_plan.popleft()
                 action_mode:str = action[0]
-
+                self.get_logger().info(f'Next action: {action_mode} with value {action[1]}')
                 if "hand" in action_mode:
                     hand = action_mode.split('_')[0]
                     opening = action[1]
+                    self.get_logger().info(f'Executing hand action: {hand} to opening {opening}')
                     self.publish_command_hand(hand, opening)
                     
                 else:
@@ -659,10 +720,17 @@ class MainNode(Node):
                     done_msg.data = True
                     self.done_pub.publish(done_msg)
                 
-            self.action_history.append(
+            self.left_action_history.append(
+                self.main_state.desired_left_arm_position.tolist() + self.main_state.desired_left_arm_quaternion.tolist()
+            )
+            self.left_state_history.append(
+                self.main_state.current_left_arm_position.tolist() + self.main_state.current_left_arm_quaternion.tolist()
+            )
+                
+            self.right_action_history.append(
                 self.main_state.desired_right_arm_position.tolist() + self.main_state.desired_right_arm_quaternion.tolist()
             )
-            self.state_history.append(
+            self.right_state_history.append(
                 self.main_state.current_right_arm_position.tolist() + self.main_state.current_right_arm_quaternion.tolist()
             )
             

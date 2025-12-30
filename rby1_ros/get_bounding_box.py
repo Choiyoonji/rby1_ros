@@ -8,10 +8,11 @@ MODEL = 'a'
 
 REFERENCE_LINK = 'base'
 CONTROLLED_LINK = 'link_right_arm_6'
+#CONTROLLED_LINK = 'link_left_arm_6'
 
-JOINT_INDEX = range(8, 15)  # 로봇의 관절 인덱스 설정 (예: 8~14번 관절)
-
-TOOL_OFFSET = [0.0, 0.0, -0.15]  # 툴 오프셋 설정 (예: 그리퍼 길이)
+JOINT_INDEX = range(8, 15)  # 로봇의 관절 인덱스 설정 (예: 15~21번 관절)
+#JOINT_INDEX = range(15, 22)  # 로봇의 관절 인덱스 설정 (예: 15~21번 관절)
+TOOL_OFFSET = [0.0, 0.0, -0.24]  # 툴 오프셋 설정 (예: 그리퍼 길이)
 
 T_TOOL_OFFSET = np.eye(4)
 T_TOOL_OFFSET[0:3, 3] = TOOL_OFFSET
@@ -86,7 +87,6 @@ def main():
         
         if user_input == 'q':
             break
-        
         try:
             robot = robot_connect(robot)
             position = get_position_with_tool_offset(robot)
@@ -104,7 +104,7 @@ def main():
     min_z, max_z = min(zs), max(zs)
     
     print("\n" + "="*40)
-    print(" 📊 결과 분석 (단위: m 또는 mm, 설정에 따름)")
+    print(f" 📊 {CONTROLLED_LINK} 결과 분석 (단위: m 또는 mm, 설정에 따름)")
     print("="*40)
     print(f"총 기록된 포인트 수: {len(position_list)}개")
     print("-" * 40)
