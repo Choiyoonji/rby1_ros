@@ -3,7 +3,7 @@ import time
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String, Int32, Float32, Bool, Int32MultiArray, Float32MultiArray
-from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, Command
+from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, CommandRBY1
 from rby1_interfaces.srv import MetaInitialReq, MetaDataReq
 
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd, qos_ctrl_latched
@@ -49,7 +49,7 @@ class MainNode(Node):
 
         # /control/command : 컨트롤 명령 주기 발행
         self.command_pub = self.create_publisher(
-            Command,
+            CommandRBY1,
             '/control/command',
             qos_cmd
         )
@@ -98,9 +98,10 @@ class MainNode(Node):
         self.main_state.current_left_gripper_position = msg.left_gripper_pos
 
     def publish_command(self):
-        if self.main_state.is_robot_connected:  
+        if self.main_state.is_robot_connected: 
             # self.get_logger().info('Publishing command message')
-            command_msg = Command()
+            command_msg = CommandRBY1()
+            command_msg.timestamp = time.monotonic()
             
             # print(self.main_state.is_controller_connected)
 
