@@ -3,7 +3,7 @@ import sys
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Float32MultiArray
-from rby1_interfaces.msg import StateRBY1, Command, EEpos, FTsensor
+from rby1_interfaces.msg import StateRBY1, CommandRBY1, EEpos, FTsensor
 from rby1_ros.qos_profiles import qos_state_latest, qos_cmd
 
 import numpy as np
@@ -100,7 +100,7 @@ class RBY1Node(Node):
         )
 
         self.control_sub = self.create_subscription(
-            Command,
+            CommandRBY1,
             '/control/command',
             self.control_callback,
             qos_cmd
@@ -209,7 +209,7 @@ class RBY1Node(Node):
                 
         self.rby1_pub.publish(msg)
 
-    def control_callback(self, msg: Command):
+    def control_callback(self, msg: CommandRBY1):
         # self.get_logger().info(f"Received control command:")
         SystemContext.control_state.is_controller_connected = True
         SystemContext.control_state.is_active = msg.is_active
