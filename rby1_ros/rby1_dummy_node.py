@@ -47,9 +47,9 @@ class DummyRBY1Node(Node):
         
         # Current State
         self.curr_joints = np.zeros(self.dof_count)
-        self.curr_ee_right_pos = np.array([0.2434, -0.3385, 0.8286]) # Arbitrary starting pose
+        self.curr_ee_right_pos = np.array([0.4142,-0.3357, 0.8300]) # Arbitrary starting pose
         self.curr_ee_right_quat = np.array([0.0, 0.0, 0.0, 1.0])
-        self.curr_ee_left_pos = np.array([0.5, 0.3, 0.5])
+        self.curr_ee_left_pos = np.array([0.4142, -0.0164, 0.8300])
         self.curr_ee_left_quat = np.array([0.0, 0.0, 0.0, 1.0])
         
         self.curr_grip_right = 0.0

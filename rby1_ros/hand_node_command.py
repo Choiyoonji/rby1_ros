@@ -32,7 +32,7 @@ class HandNodeCommand(Node):
         self.current_target_r = list(self.init_angle)
         
         self.initialize_hands()
-        
+        1
         self.hand_cmd_sub = self.create_subscription(
             CommandHand,
             '/control/command/hand',

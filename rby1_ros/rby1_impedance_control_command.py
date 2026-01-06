@@ -511,15 +511,15 @@ class RBY1Node(Node):
                 else:
                     right_T = SystemContext.rby1_state.right_arm_locked_pose
                 
-                # if SystemContext.rby1_state.is_left_following:
-                #     SystemContext.control_state.desired_left_ee_T = pos_to_se3(
-                #         SystemContext.control_state.desired_left_ee_pose["position"],
-                #         SystemContext.control_state.desired_left_ee_pose["quaternion"]
-                #     )
-                #     left_T = SystemContext.control_state.desired_left_ee_T
-                #     SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
-                # else:
-                left_T = SystemContext.rby1_state.left_arm_locked_pose
+                if SystemContext.rby1_state.is_left_following:
+                    SystemContext.control_state.desired_left_ee_T = pos_to_se3(
+                        SystemContext.control_state.desired_left_ee_pose["position"],
+                        SystemContext.control_state.desired_left_ee_pose["quaternion"]
+                    )
+                    left_T = SystemContext.control_state.desired_left_ee_T
+                    SystemContext.rby1_state.left_arm_locked_pose = left_T.copy()
+                else:
+                    left_T = SystemContext.rby1_state.left_arm_locked_pose
                 
                 if SystemContext.rby1_state.is_torso_following:
                     SystemContext.control_state.desired_torso_ee_T = pos_to_se3(

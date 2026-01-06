@@ -79,6 +79,7 @@ def rotvec_to_quat(vec: np.ndarray) -> np.ndarray:
     if angle < 1e-6:
         return np.array([1.0, 0.0, 0.0, 0.0])
     
+    # angle (radians)
     axis = vec / angle
     half_angle = angle / 2
     return np.array([np.cos(half_angle), 
