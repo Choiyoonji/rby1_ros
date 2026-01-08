@@ -63,7 +63,7 @@ class MainNode(Node):
         cv2.resizeWindow("control", 480, 640)
 
     def action_callback(self, msg):
-        self.get_logger().info(f'Received action data: {msg.data}')
+        # self.get_logger().info(f'Received action data: {msg.data}')
         data = msg.data
         self.main_state.is_controller_initialized = True
         
@@ -142,7 +142,7 @@ class MainNode(Node):
     def main_loop(self):
         if self.main_state.is_robot_stopped:
             self.reset_state()
-
+   
         key = cv2.waitKey(1) & 0xFF
         if key == ord('r'):
             self.get_logger().info('Received ready command')

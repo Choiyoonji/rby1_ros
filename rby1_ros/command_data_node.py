@@ -18,9 +18,9 @@ from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick, qos_state_latest
 from rby1_interfaces.msg import EEpos, FTsensor, StateRBY1, CommandRBY1, CommandHand, Action
 
 
-class RBY1DataNode(Node):
+class CommandDataNode(Node):
     def __init__(self):
-        super().__init__("rby1_data_node_joint_both")
+        super().__init__("command_data_node")
 
         # -------- Parameters --------
         self.declare_parameter("topic_state", '/control/command')
@@ -289,7 +289,7 @@ class RBY1DataNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    node = RBY1DataNode()
+    node = CommandDataNode()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

@@ -9,7 +9,7 @@ def generate_launch_description():
             name='tick_publisher',
             output='screen',
             parameters=[
-                {'task': 'test_task_001'},
+                {'task': 'test_1230'},
                 {'base_dir': '~/rby1_data'}
             ]
         ),
