@@ -11,7 +11,7 @@ import h5py
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import Bool, UInt64, String
-from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick, qos_state_latest
+from rby1_ros.qos_profiles import qos_ctrl_latched, qos_tick, qos_state_latest, qos_cmd
 
 # Import the RBY1 State message
 from rby1_interfaces.msg import StateRBY1 as RBY1State
@@ -31,6 +31,7 @@ class RBY1DataNode(Node):
         self.sub_tick   = self.create_subscription(UInt64, "/tick", self._on_tick, qos_tick)
         self.sub_path   = self.create_subscription(String, "/dataset_path", self._on_data_path, qos_ctrl_latched)
         self.sub_state  = self.create_subscription(RBY1State, self.topic_state, self._on_state, qos_state_latest)
+        self.sub_task = self.create_subscription(String, "/task_description", self._on_task_description, qos_cmd)
 
         # -------- State --------
         self.recording: bool = False
@@ -41,6 +42,7 @@ class RBY1DataNode(Node):
         self.latest_state_seq: int = 0          # increases on each new /rby1/state
         self._seen_seq_at_last_tick: int = 0    # seq observed at last tick
         self.last_ts: float = -1.0               # timestamp of last recorded state
+        self.latest_task: str = ""
 
         # HDF5 path & handle
         self.dataset_dir: Optional[Path] = None
@@ -81,6 +83,8 @@ class RBY1DataNode(Node):
         self.buf_right_gripper_pos: List[float] = []
         self.buf_left_gripper_pos: List[float] = []
 
+        self.buf_task_description: List[str] = []
+
         self.dataset_path = None
 
         self.get_logger().info(f"[init] RBY1 Data Node initialized, subscribing to '{self.topic_state}'")
@@ -97,6 +101,11 @@ class RBY1DataNode(Node):
         self.save_path = str(self.dataset_path / "rby1_state.h5")
         self.get_logger().info(f"Received dataset path: {self.dataset_path}")
         self._start_session()
+
+    def _on_task_description(self, msg: String):
+        if not self.recording:
+            return
+        self.latest_task = msg.data
 
     def _on_tick(self, msg: UInt64):
         if not self.recording:
@@ -213,7 +222,10 @@ class RBY1DataNode(Node):
         # Gripper
         self.buf_right_gripper_pos.append(float(getattr(st, "right_gripper_pos", np.nan)))
         self.buf_left_gripper_pos.append(float(getattr(st, "left_gripper_pos", np.nan)))
-        
+
+        # Task description
+        self.buf_task_description.append(self.latest_task)
+
     def _on_state(self, msg: RBY1State):
         self.latest_state = msg
         self.latest_state_seq += 1
@@ -336,6 +348,18 @@ class RBY1DataNode(Node):
             g.create_dataset("right_gripper_pos", data=np.asarray(self.buf_right_gripper_pos, dtype=np.float32), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
             g.create_dataset("left_gripper_pos", data=np.asarray(self.buf_left_gripper_pos, dtype=np.float32), compression="gzip", compression_opts=4, shuffle=True, fletcher32=True, chunks=True)
 
+            # Task description (variable-length strings)
+            dt_str = h5py.string_dtype(encoding='utf-8')
+            g.create_dataset(
+                "task_description",
+                data=np.asarray(self.buf_task_description, dtype=dt_str),
+                compression="gzip",
+                compression_opts=4,
+                shuffle=True,
+                fletcher32=True,
+                chunks=True,
+            )
+
     def _clear_buffers(self):
         self.buf_now_mono_ns.clear()
         self.buf_tick.clear()
@@ -369,6 +393,8 @@ class RBY1DataNode(Node):
 
         self.buf_right_gripper_pos.clear()
         self.buf_left_gripper_pos.clear()
+
+        self.buf_task_description.clear()
 
     # ----------------- Shutdown -----------------
     def destroy_node(self):

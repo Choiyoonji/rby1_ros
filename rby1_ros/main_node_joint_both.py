@@ -54,10 +54,27 @@ class MainNode(Node):
             qos_cmd
         )
 
+        self.task_pub = self.create_publisher(
+            String,
+            '/task_description',
+            qos_cmd
+        )
+
         self.main_timer = self.create_timer(1/100.0, self.main_loop)
         self.command_timer = self.create_timer(1/100.0, self.publish_command)
+        self.task_timer = self.create_timer(1/100.0, self.publish_task)
         
         self.command_img = np.zeros((480, 640, 3), dtype=np.uint8)
+
+        self.task_list = [
+            "Pick up the cup",
+            "Place the cup into the box",
+            "Pick up the bottle",
+            "Place the bottle into the box",
+            "Move the box to the target area"
+        ]
+
+        self.task_index = 0
     
         cv2.namedWindow("control", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("control", 480, 640)
@@ -139,6 +156,12 @@ class MainNode(Node):
         self.main_state.desired_left_arm_quaternion = np.array([])
         self.main_state.desired_left_gripper_position = 0.0
 
+    def publish_task(self):
+        if self.record and self.task_index < len(self.task_list):
+            task_msg = String()
+            task_msg.data = self.task_list[self.task_index]
+            self.task_pub.publish(task_msg)
+
     def main_loop(self):
         if self.main_state.is_robot_stopped:
             self.reset_state()
@@ -164,8 +187,17 @@ class MainNode(Node):
             rclpy.shutdown()
         elif key == ord('h'):
             self.get_logger().info('Received record command')
-            self.record = not self.record
-            self.record_pub.publish(Bool(data=self.record))
+            if self.record:
+                if self.task_index < len(self.task_list):
+                    self.get_logger().info(f'Completed Task {self.task_index}: {self.task_list[self.task_index]}')
+                    self.task_index = self.task_index + 1
+                else:
+                    self.get_logger().info('All tasks completed.')
+                    self.record = False
+                    self.record_pub.publish(Bool(data=self.record))
+            else:
+                self.record = True
+                self.record_pub.publish(Bool(data=self.record))
 
         img = np.zeros((480, 640, 3), dtype=np.uint8)
         cv2.putText(img, "'r' : Ready Pose", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
